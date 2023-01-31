@@ -1,0 +1,365 @@
+---
+title: "Breathe London Community Programme"
+author: |
+  | Dr. Kayla Schulte, Environmental Research Group, Imperial College London
+  | EMAIL: k.schulte21@imperial.ac.uk
+output: pdf_document
+date: "31 Jan 2023"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+#load packages
+
+packages <- c("dplyr", "ggplot2", "tidyverse" ,"sf", "sp", "rgdal", "cowplot", "tidyr", "jsonlite", "readxl", "stringr", "cowplot")
+
+lapply(packages, require, character.only = TRUE)
+
+#load data
+
+#REPLACE w/ your own file path to NO2 and PM25 csv files
+
+NO2_DATA_FRAME <- XXXXXX
+PM25_DATA_FRAME <- XXXXXX
+
+```
+
+\centering
+## Quarterly Air Quality Trends Report
+
+
+![Breathe London sensor graphic]("C:\Users\kbs15\OneDrive - Imperial College London\Breathe London\Images\Sensor"){width=25%}
+
+# Mums for Lungs Redbridge
+
+\raggedright
+
+## Quarter 4 (1 October to 31 December) in 2022
+
+This document presents hourly average pollution concentration measured at your Breathe London Community Programme node over the past 3 months. 
+
+## General Air Pollution Trends in London 
+
+(Q1) Jan-March: In this quarter we may see higher NO~2~ levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.
+
+(Q2) April-June: We may continue to see some particulate episodes in April as the farming fertiliser season continues and we have high pressure systems creating stagnant conditions. May and June are generally low pollution months.
+
+(Q3) July-Sept: The summer months are when we are likely to see ozone episodes. Ozone is not emitted but rather formed in the atmosphere from other pollutants in the heat of the sun. Generally, ozone (O~3~) builds through the day peaking between 16:00-20:00.
+
+**(Q4) Oct-Dec: Autumn is typically a season of lower pollution, with the wind and rain helping to keep pollution low. As we get into December though we do sometimes see  winter smogs on  cold, clear, crisp mornings where pollution from traffic and heating is trapped near the ground.**
+
+
+```{r, echo=FALSE}
+#Clean raw data for graphing - Filter by weekdays vs weekends for both pollutants
+#IF USING EXPORTED CSV FROM BREATHELONDON.ORG - RENAME COLUMNS
+#NO2_DATA_FRAME <- NO2_DATA_FRAME %>% 
+#  rename(
+#    date = Category,
+#    no2 = 'Nitrogen dioxide'
+#    )
+
+#PM25_DATA_FRAME <- PM25_DATA_FRAME %>% 
+#  rename(
+#    date = Category,
+#    pm25 = 'PM<sub>2.5</sub> particulates'
+#    )
+
+#NO2
+
+NO2_raw <- #NO2_DATA_FRAME
+NO2_raw$date <- gsub("\\..*","",NO2_raw$date)
+
+NO2_raw$weekday <- lubridate::wday(NO2_raw$date)
+
+NO2_weekdays <- NO2_raw %>% filter(
+  weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
+)
+
+NO2_weekends <- NO2_raw %>% filter(
+  weekday == 7 | weekday == 1
+)
+
+#PM2.5 
+
+PM2.5_raw <- #PM25_DATA_FRAME
+PM2.5_raw$date <- gsub("\\..*","",PM2.5_raw$date)
+
+PM2.5_raw$weekday <- lubridate::wday(PM2.5_raw$date)
+
+PM2.5_weekdays <- PM2.5_raw %>% filter(
+  weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
+)
+
+PM2.5_weekends <- PM2.5_raw %>% filter(
+  weekday == 7 | weekday == 1
+)
+
+#Calculate hourly means by weekday
+#NO2
+
+NO2_weekdays <- NO2_weekdays %>%
+  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+
+NO2_weekdays <- separate(NO2_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
+NO2_weekdays <- subset(NO2_weekdays, select = -c(time2))
+NO2_weekdays$Date2 <- as.Date(NO2_weekdays$Date)
+
+NO2_weekdays <- within(NO2_weekdays,{
+  posb <- as.POSIXlt(time,format="%H:%M:%S")
+  hours <- posb$hour
+  mins <- posb$min
+  time <- format(posb, "%H:%M")
+  posb <- NULL  # cleanup
+})
+
+hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(NO2_weekdays$hours))
+hours <- paste0(hours2, NO2_weekdays$hours)
+hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
+NO2_weekdays$hours <- hours
+
+NO2_weekdays_Q3 <- NO2_weekdays %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
+NO2_weekdays_Q4 <- NO2_weekdays %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+NO2_weekdays_all <- NO2_weekdays
+
+NO2_weekdays_means_Q3 <- NO2_weekdays_Q3 %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean))
+
+NO2_weekdays_means_Q4 <- NO2_weekdays_Q4 %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean)) 
+
+NO2_weekdays_means_all <- NO2_weekdays_all %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean)) 
+
+#PM2.5
+
+PM2.5_weekdays <- PM2.5_weekdays %>%
+  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+
+PM2.5_weekdays <- separate(PM2.5_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
+PM2.5_weekdays <- subset(PM2.5_weekdays, select = -c(time2))
+PM2.5_weekdays$Date2 <- as.Date(PM2.5_weekdays$Date2)
+
+PM2.5_weekdays <- within(PM2.5_weekdays,{
+  posb <- as.POSIXlt(time,format="%H:%M:%S")
+  hours <- posb$hour
+  mins <- posb$min
+  time <- format(posb, "%H:%M")
+  posb <- NULL  # cleanup
+})
+
+hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(PM2.5_weekdays$hours))
+hours <- paste0(hours2, PM2.5_weekdays$hours)
+hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
+PM2.5_weekdays$hours <- hours
+
+PM2.5_weekdays_Q3 <- PM2.5_weekdays %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
+PM2.5_weekdays_Q4 <- PM2.5_weekdays %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+PM2.5_weekdays_all <- PM2.5_weekdays
+
+PM2.5_weekdays_means_Q3 <- PM2.5_weekdays_Q3 %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+PM2.5_weekdays_means_Q4 <- PM2.5_weekdays_Q4 %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+PM2.5_weekdays_means_all <- PM2.5_weekdays_all %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+
+
+#Generate  dfs to plot pollution trends
+
+#NO2
+
+NO2_weekdays_means_all$name <- "All data to date"
+NO2_weekdays_means_Q3$name <- "Q3"
+NO2_weekdays_means_Q4$name <- "Q4"
+
+NO2_plot_df <- rbind(NO2_weekdays_means_all, NO2_weekdays_means_Q4) #ADD Q3 data back in?
+
+#PM2.5
+
+PM2.5_weekdays_means_all$name <- "All data to date"
+PM2.5_weekdays_means_Q3$name <- "Q3"
+PM2.5_weekdays_means_Q4$name <- "Q4"
+
+PM2.5_plot_df <- rbind(PM2.5_weekdays_means_all, PM2.5_weekdays_means_Q4) #ADD Q3 data back in?
+
+#Calculate hourly means by weekend day
+#NO2
+
+NO2_weekends <- NO2_weekends %>%
+  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+
+NO2_weekends <- separate(NO2_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
+NO2_weekends <- subset(NO2_weekends, select = -c(time2))
+NO2_weekends$Date2 <- as.Date(NO2_weekends$Date)
+
+NO2_weekends <- within(NO2_weekends,{
+  posb <- as.POSIXlt(time,format="%H:%M:%S")
+  hours <- posb$hour
+  mins <- posb$min
+  time <- format(posb, "%H:%M")
+  posb <- NULL  # cleanup
+})
+
+hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(NO2_weekends$hours))
+hours <- paste0(hours2, NO2_weekends$hours)
+hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
+NO2_weekends$hours <- hours
+
+NO2_weekends_Q3 <- NO2_weekends %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
+NO2_weekends_Q4 <- NO2_weekends %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+NO2_weekends_all <- NO2_weekends
+
+NO2_weekends_means_Q3 <- NO2_weekends_Q3 %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean))
+
+NO2_weekends_means_Q4 <- NO2_weekends_Q4 %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean)) 
+
+NO2_weekends_means_all <- NO2_weekends_all %>% group_by(hours) %>%                        
+  summarise_at(vars(no2),
+               list(mean = mean)) 
+
+#PM2.5
+
+PM2.5_weekends <- PM2.5_weekends %>%
+  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+
+PM2.5_weekends <- separate(PM2.5_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
+PM2.5_weekends <- subset(PM2.5_weekends, select = -c(time2))
+PM2.5_weekends$Date2 <- as.Date(PM2.5_weekends$Date2)
+
+PM2.5_weekends <- within(PM2.5_weekends,{
+  posb <- as.POSIXlt(time,format="%H:%M:%S")
+  hours <- posb$hour
+  mins <- posb$min
+  time <- format(posb, "%H:%M")
+  posb <- NULL  # cleanup
+})
+
+hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(PM2.5_weekends$hours))
+hours <- paste0(hours2, PM2.5_weekends$hours)
+hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
+PM2.5_weekends$hours <- hours
+
+PM2.5_weekends_Q3 <- PM2.5_weekends %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
+PM2.5_weekends_Q4 <- PM2.5_weekends %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+PM2.5_weekends_all <- PM2.5_weekends
+
+PM2.5_weekends_means_Q3 <- PM2.5_weekends_Q3 %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+PM2.5_weekends_means_Q4 <- PM2.5_weekends_Q4 %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+PM2.5_weekends_means_all <- PM2.5_weekends_all %>% group_by(hours) %>%                        
+  summarise_at(vars(pm25),
+               list(mean = mean))
+
+
+
+#Generate  dfs to plot pollution trends
+
+#NO2
+
+NO2_weekends_means_all$name <- "All data to date"
+NO2_weekends_means_Q3$name <- "Q3"
+NO2_weekends_means_Q4$name <- "Q4"
+
+NO2_plot_weekends_df <- rbind(NO2_weekends_means_all, NO2_weekends_means_Q4) #ADD Q3 data back in?
+
+#PM2.5
+
+PM2.5_weekends_means_all$name <- "All data to date"
+PM2.5_weekends_means_Q3$name <- "Q3"
+PM2.5_weekends_means_Q4$name <- "Q4"
+
+PM2.5_plot_weekends_df <- rbind(PM2.5_weekends_means_all, PM2.5_weekends_means_Q4) #ADD Q3 data back in?
+
+```
+
+# NO~2~ 
+
+## Average NO~2~ each hour at Breathe London node
+
+```{r, out.width='\\textwidth', fig.width = 10, fig.height = 6, fig.align='center', fig.show='hold'}
+NO2_plot <- ggplot(NO2_plot_df)+
+  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
+  xlab("Hour (Weekday)") + ylab("Mean NO"[2]~"in ug/u3") + ggtitle("WEEKDAYS") +
+  geom_hline(aes(yintercept=40),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,40,label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,25,label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,5,label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) + 
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+  theme(legend.position="none", plot.title = element_text(hjust = 0.5))
+
+NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
+  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
+  xlab("Hour (Weekend)") + ggtitle("WEEKENDS") +
+  geom_hline(aes(yintercept=40),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,40,label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,25,label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,5,label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) + 
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+   theme(plot.title = element_text(hjust = 0.5))
+
+plot_grid(NO2_plot, NO2_plot_weekend, align = "h", ncol = 2, rel_widths = c(1/4, 1/3))
+```
+
+# PM~2.5~
+
+## Average PM~2.5~ each hour at Breathe London node
+
+```{r, out.width='\\textwidth', fig.width = 10, fig.height = 6, fig.align='center', fig.show='hold'}
+PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df)+
+  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
+  xlab("Hour") + ylab("Mean PM2.5 in ug/u3") + ggtitle("WEEKDAYS") +
+   geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,25,label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=15),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,15,label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,5,label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+  theme(legend.position="none", plot.title = element_text(hjust = 0.5))
+
+PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
+  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
+  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
+  xlab("Hour") + ggtitle("WEEKENDS") +
+   geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,25,label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=15),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,15,label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
+  geom_text(aes(0,5,label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4"))+
+   theme(plot.title = element_text(hjust = 0.5))
+
+plot_grid(PM2.5_plot_weekdays, PM2.5_plot_weekends, align = "h", ncol = 2, rel_widths = c(1/4, 1/3)) 
+
+```
+
+To download the data that was used to generate this report, visit <https://www.breathelondon.org/> and search for your node in the Node Search hyperlink just below the node map. 
+
+
