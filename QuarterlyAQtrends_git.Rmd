@@ -4,11 +4,11 @@ author: |
   | Dr. Kayla Schulte, Environmental Research Group, Imperial College London
   | EMAIL: k.schulte21@imperial.ac.uk
 output: pdf_document
-date: "31 Jan 2023"
+date: "`r format(Sys.Date(), '%d %b %Y')`" # Today's date
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 
 if (!file.exists("R/bl_api.R")) {
   stop("Knit from the project root (folder containing R/bl_api.R).")
@@ -309,12 +309,12 @@ NO2_plot <- ggplot(NO2_plot_df)+
   geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
   xlab("Hour (Weekday)") + ylab("Mean NO"[2]~"in ug/u3") + ggtitle("WEEKDAYS") +
-  geom_hline(aes(yintercept=40),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,40,label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,25,label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,5,label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) + 
+  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 40, label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
   scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
@@ -322,12 +322,12 @@ NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
   geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
   xlab("Hour (Weekend)") + ggtitle("WEEKENDS") +
-  geom_hline(aes(yintercept=40),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,40,label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,25,label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,5,label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) + 
+  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 40, label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
   scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
    theme(plot.title = element_text(hjust = 0.5))
 
@@ -343,12 +343,12 @@ PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df)+
   geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
   xlab("Hour") + ylab("Mean PM2.5 in ug/u3") + ggtitle("WEEKDAYS") +
-   geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,25,label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=15),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,15,label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,5,label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 25, label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
@@ -356,12 +356,12 @@ PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
   geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
   xlab("Hour") + ggtitle("WEEKENDS") +
-   geom_hline(aes(yintercept=25),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,25,label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=15),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,15,label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
-  geom_hline(aes(yintercept=5),  linetype="dashed", col = 'black') +
-  geom_text(aes(0,5,label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1), color = "black",size=3.5) +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 25, label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4"))+
    theme(plot.title = element_text(hjust = 0.5))
 
