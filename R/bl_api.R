@@ -156,9 +156,7 @@ bl_format_api_time <- function(x) {
 #' Parse date/time text (with or without leading weekday) to POSIXct GMT
 bl_parse_gmt_datetime <- function(x) {
   x <- trimws(x)
-  if (!grepl("GMT\\s*$", x, ignore.case = TRUE)) {
-    x <- paste(x, "GMT")
-  }
+  x <- sub("\\s+GMT\\s*$", "", x, ignore.case = TRUE)
   if (grepl("^[A-Za-z]{3} ", x)) {
     dt <- as.POSIXct(x, format = "%a %d %b %Y %H:%M:%S", tz = "GMT")
   } else {
@@ -215,11 +213,12 @@ bl_clarity_to_df <- function(records, value_col) {
   }
 
   if (is.null(records) || length(records) == 0) {
-    return(data.frame(
+    empty <- data.frame(
       date = character(),
-      value = numeric(),
       stringsAsFactors = FALSE
-    ))
+    )
+    empty[[value_col]] <- numeric()
+    return(empty)
   }
 
   if (!is.data.frame(records)) {
