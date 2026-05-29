@@ -1,0 +1,22 @@
+# Secrets
+.env
+.Renviron
+
+# R
+.Rhistory
+.RData
+.Rproj.user
+
+# Build / knit outputs
+*.pdf
+*.knit.md
+*.tex
+*.aux
+*.log
+
+# Regenerable API cache (run scripts/fetch_*.R)
+data/raw/*.json
+data/processed/*.csv
+
+# OS
+.DS_Store

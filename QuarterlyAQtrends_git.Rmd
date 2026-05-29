@@ -10,18 +10,29 @@ date: "31 Jan 2023"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 
-#load packages
+if (!file.exists("R/bl_api.R")) {
+  stop("Knit from the project root (folder containing R/bl_api.R).")
+}
+source("R/bl_api.R")
+bl_load_env()
 
-packages <- c("dplyr", "ggplot2", "tidyverse" ,"sf", "sp", "rgdal", "cowplot", "tidyr", "jsonlite", "readxl", "stringr", "cowplot")
+packages <- c(
+  "dplyr", "ggplot2", "tidyverse", "cowplot", "tidyr",
+  "jsonlite", "stringr", "lubridate"
+)
+invisible(lapply(packages, require, character.only = TRUE))
 
-lapply(packages, require, character.only = TRUE)
+# BL_DATA_SOURCE=csv (default) or api — see .env.example
+report_data <- bl_load_report_data()
+NO2_DATA_FRAME <- report_data$no2
+PM25_DATA_FRAME <- report_data$pm25
 
-#load data
-
-#REPLACE w/ your own file path to NO2 and PM25 csv files
-
-NO2_DATA_FRAME <- XXXXXX
-PM25_DATA_FRAME <- XXXXXX
+report_dates <- bl_env_report_dates()
+q3_start <- report_dates$q3_start
+q3_end <- report_dates$q3_end
+q4_start <- report_dates$q4_start
+q4_end <- report_dates$q4_end
+report_year <- report_dates$report_year
 
 ```
 
@@ -29,13 +40,11 @@ PM25_DATA_FRAME <- XXXXXX
 ## Quarterly Air Quality Trends Report
 
 
-![Breathe London sensor graphic]("C:\Users\kbs15\OneDrive - Imperial College London\Breathe London\Images\Sensor"){width=25%}
-
 # Mums for Lungs Redbridge
 
 \raggedright
 
-## Quarter 4 (1 October to 31 December) in 2022
+## Quarter 4 (1 October to 31 December) in `r report_year`
 
 This document presents hourly average pollution concentration measured at your Breathe London Community Programme node over the past 3 months. 
 
@@ -67,10 +76,10 @@ This document presents hourly average pollution concentration measured at your B
 
 #NO2
 
-NO2_raw <- #NO2_DATA_FRAME
+NO2_raw <- NO2_DATA_FRAME
 NO2_raw$date <- gsub("\\..*","",NO2_raw$date)
 
-NO2_raw$weekday <- lubridate::wday(NO2_raw$date)
+NO2_raw$weekday <- lubridate::wday(lubridate::ymd_hms(NO2_raw$date))
 
 NO2_weekdays <- NO2_raw %>% filter(
   weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
@@ -82,10 +91,10 @@ NO2_weekends <- NO2_raw %>% filter(
 
 #PM2.5 
 
-PM2.5_raw <- #PM25_DATA_FRAME
+PM2.5_raw <- PM25_DATA_FRAME
 PM2.5_raw$date <- gsub("\\..*","",PM2.5_raw$date)
 
-PM2.5_raw$weekday <- lubridate::wday(PM2.5_raw$date)
+PM2.5_raw$weekday <- lubridate::wday(lubridate::ymd_hms(PM2.5_raw$date))
 
 PM2.5_weekdays <- PM2.5_raw %>% filter(
   weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
@@ -99,11 +108,11 @@ PM2.5_weekends <- PM2.5_raw %>% filter(
 #NO2
 
 NO2_weekdays <- NO2_weekdays %>%
-  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
 
 NO2_weekdays <- separate(NO2_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
 NO2_weekdays <- subset(NO2_weekdays, select = -c(time2))
-NO2_weekdays$Date2 <- as.Date(NO2_weekdays$Date)
+NO2_weekdays$Date2 <- as.Date(NO2_weekdays$Date2)
 
 NO2_weekdays <- within(NO2_weekdays,{
   posb <- as.POSIXlt(time,format="%H:%M:%S")
@@ -118,8 +127,8 @@ hours <- paste0(hours2, NO2_weekdays$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 NO2_weekdays$hours <- hours
 
-NO2_weekdays_Q3 <- NO2_weekdays %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
-NO2_weekdays_Q4 <- NO2_weekdays %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+NO2_weekdays_Q3 <- NO2_weekdays %>% filter(between(Date2, q3_start, q3_end)) 
+NO2_weekdays_Q4 <- NO2_weekdays %>% filter(between(Date2, q4_start, q4_end))
 NO2_weekdays_all <- NO2_weekdays
 
 NO2_weekdays_means_Q3 <- NO2_weekdays_Q3 %>% group_by(hours) %>%                        
@@ -137,7 +146,7 @@ NO2_weekdays_means_all <- NO2_weekdays_all %>% group_by(hours) %>%
 #PM2.5
 
 PM2.5_weekdays <- PM2.5_weekdays %>%
-  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
 
 PM2.5_weekdays <- separate(PM2.5_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
 PM2.5_weekdays <- subset(PM2.5_weekdays, select = -c(time2))
@@ -156,8 +165,8 @@ hours <- paste0(hours2, PM2.5_weekdays$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 PM2.5_weekdays$hours <- hours
 
-PM2.5_weekdays_Q3 <- PM2.5_weekdays %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
-PM2.5_weekdays_Q4 <- PM2.5_weekdays %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+PM2.5_weekdays_Q3 <- PM2.5_weekdays %>% filter(between(Date2, q3_start, q3_end)) 
+PM2.5_weekdays_Q4 <- PM2.5_weekdays %>% filter(between(Date2, q4_start, q4_end))
 PM2.5_weekdays_all <- PM2.5_weekdays
 
 PM2.5_weekdays_means_Q3 <- PM2.5_weekdays_Q3 %>% group_by(hours) %>%                        
@@ -196,11 +205,11 @@ PM2.5_plot_df <- rbind(PM2.5_weekdays_means_all, PM2.5_weekdays_means_Q4) #ADD Q
 #NO2
 
 NO2_weekends <- NO2_weekends %>%
-  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
 
 NO2_weekends <- separate(NO2_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
 NO2_weekends <- subset(NO2_weekends, select = -c(time2))
-NO2_weekends$Date2 <- as.Date(NO2_weekends$Date)
+NO2_weekends$Date2 <- as.Date(NO2_weekends$Date2)
 
 NO2_weekends <- within(NO2_weekends,{
   posb <- as.POSIXlt(time,format="%H:%M:%S")
@@ -215,8 +224,8 @@ hours <- paste0(hours2, NO2_weekends$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 NO2_weekends$hours <- hours
 
-NO2_weekends_Q3 <- NO2_weekends %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
-NO2_weekends_Q4 <- NO2_weekends %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+NO2_weekends_Q3 <- NO2_weekends %>% filter(between(Date2, q3_start, q3_end)) 
+NO2_weekends_Q4 <- NO2_weekends %>% filter(between(Date2, q4_start, q4_end))
 NO2_weekends_all <- NO2_weekends
 
 NO2_weekends_means_Q3 <- NO2_weekends_Q3 %>% group_by(hours) %>%                        
@@ -234,7 +243,7 @@ NO2_weekends_means_all <- NO2_weekends_all %>% group_by(hours) %>%
 #PM2.5
 
 PM2.5_weekends <- PM2.5_weekends %>%
-  dplyr::mutate(time = str_remove(date, ".*\\d+\\s+"))
+  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
 
 PM2.5_weekends <- separate(PM2.5_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
 PM2.5_weekends <- subset(PM2.5_weekends, select = -c(time2))
@@ -253,8 +262,8 @@ hours <- paste0(hours2, PM2.5_weekends$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 PM2.5_weekends$hours <- hours
 
-PM2.5_weekends_Q3 <- PM2.5_weekends %>% filter(between(Date2, as.Date('2022-07-01'), as.Date('2022-09-30'))) 
-PM2.5_weekends_Q4 <- PM2.5_weekends %>% filter(between(Date2, as.Date('2022-10-01'), as.Date('2022-12-31')))
+PM2.5_weekends_Q3 <- PM2.5_weekends %>% filter(between(Date2, q3_start, q3_end)) 
+PM2.5_weekends_Q4 <- PM2.5_weekends %>% filter(between(Date2, q4_start, q4_end))
 PM2.5_weekends_all <- PM2.5_weekends
 
 PM2.5_weekends_means_Q3 <- PM2.5_weekends_Q3 %>% group_by(hours) %>%                        

@@ -1,0 +1,26 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Breathe: Fetch sensor list",
+      "type": "shell",
+      "command": "Rscript scripts/fetch_sensors.R",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build"
+    },
+    {
+      "label": "Breathe: Fetch readings (uses .env)",
+      "type": "shell",
+      "command": "Rscript scripts/fetch_readings.R",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build"
+    },
+    {
+      "label": "Breathe: Knit quarterly report (PDF)",
+      "type": "shell",
+      "command": "Rscript -e \"rmarkdown::render('QuarterlyAQtrends_git.Rmd')\"",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true }
+    }
+  ]
+}
