@@ -36,20 +36,20 @@ NO2_DATA_FRAME <- report_data$no2
 PM25_DATA_FRAME <- report_data$pm25
 
 report_dates <- bl_env_report_dates()
-q3_start <- report_dates$q3_start
-q3_end <- report_dates$q3_end
-q4_start <- report_dates$q4_start
-q4_end <- report_dates$q4_end
+quarter_start <- report_dates$quarter_start
+quarter_end <- report_dates$quarter_end
 report_year <- report_dates$report_year
+report_quarter <- report_dates$report_quarter
 
-current_quarter <- (lubridate::month(Sys.Date()) - 1L) %/% 3L + 1L
 quarter_headings <- c(
   "Quarter 1 (1 January to 31 March)",
   "Quarter 2 (1 April to 30 June)",
   "Quarter 3 (1 July to 30 September)",
   "Quarter 4 (1 October to 31 December)"
 )
-quarter_heading <- paste(quarter_headings[current_quarter], "in", report_year)
+quarter_heading <- paste(quarter_headings[report_quarter], "in", report_year)
+quarter_label <- paste0("Q", report_quarter)
+plot_legend_labels <- c("All data to date", quarter_label)
 
 quarter_trend_texts <- c(
   "(Q1) Jan-March: In this quarter we may see higher NO$_2$ levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.",
@@ -59,7 +59,7 @@ quarter_trend_texts <- c(
 )
 
 bl_format_quarter_line <- function(q, text) {
-  if (q == current_quarter) {
+  if (q == report_quarter) {
     sprintf("\\textcolor{blurl}{\\textbf{%s}}", text)
   } else {
     sprintf("\\textcolor{blgrey}{%s}", text)
@@ -157,15 +157,15 @@ hours <- paste0(hours2, NO2_weekdays$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 NO2_weekdays$hours <- hours
 
-NO2_weekdays_Q3 <- NO2_weekdays %>% filter(between(Date2, q3_start, q3_end)) 
-NO2_weekdays_Q4 <- NO2_weekdays %>% filter(between(Date2, q4_start, q4_end))
+NO2_weekdays_Q3 <- NO2_weekdays %>% filter(between(Date2, report_dates$q3_start, report_dates$q3_end)) 
+NO2_weekdays_quarter <- NO2_weekdays %>% filter(between(Date2, quarter_start, quarter_end))
 NO2_weekdays_all <- NO2_weekdays
 
 NO2_weekdays_means_Q3 <- NO2_weekdays_Q3 %>% group_by(hours) %>%                        
   summarise_at(vars(no2),
                list(mean = mean))
 
-NO2_weekdays_means_Q4 <- NO2_weekdays_Q4 %>% group_by(hours) %>%                        
+NO2_weekdays_means_quarter <- NO2_weekdays_quarter %>% group_by(hours) %>%                        
   summarise_at(vars(no2),
                list(mean = mean)) 
 
@@ -195,15 +195,15 @@ hours <- paste0(hours2, PM2.5_weekdays$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 PM2.5_weekdays$hours <- hours
 
-PM2.5_weekdays_Q3 <- PM2.5_weekdays %>% filter(between(Date2, q3_start, q3_end)) 
-PM2.5_weekdays_Q4 <- PM2.5_weekdays %>% filter(between(Date2, q4_start, q4_end))
+PM2.5_weekdays_Q3 <- PM2.5_weekdays %>% filter(between(Date2, report_dates$q3_start, report_dates$q3_end)) 
+PM2.5_weekdays_quarter <- PM2.5_weekdays %>% filter(between(Date2, quarter_start, quarter_end))
 PM2.5_weekdays_all <- PM2.5_weekdays
 
 PM2.5_weekdays_means_Q3 <- PM2.5_weekdays_Q3 %>% group_by(hours) %>%                        
   summarise_at(vars(pm25),
                list(mean = mean))
 
-PM2.5_weekdays_means_Q4 <- PM2.5_weekdays_Q4 %>% group_by(hours) %>%                        
+PM2.5_weekdays_means_quarter <- PM2.5_weekdays_quarter %>% group_by(hours) %>%                        
   summarise_at(vars(pm25),
                list(mean = mean))
 
@@ -219,17 +219,17 @@ PM2.5_weekdays_means_all <- PM2.5_weekdays_all %>% group_by(hours) %>%
 
 NO2_weekdays_means_all$name <- "All data to date"
 NO2_weekdays_means_Q3$name <- "Q3"
-NO2_weekdays_means_Q4$name <- "Q4"
+NO2_weekdays_means_quarter$name <- quarter_label
 
-NO2_plot_df <- rbind(NO2_weekdays_means_all, NO2_weekdays_means_Q4) #ADD Q3 data back in?
+NO2_plot_df <- rbind(NO2_weekdays_means_all, NO2_weekdays_means_quarter)
 
 #PM2.5
 
 PM2.5_weekdays_means_all$name <- "All data to date"
 PM2.5_weekdays_means_Q3$name <- "Q3"
-PM2.5_weekdays_means_Q4$name <- "Q4"
+PM2.5_weekdays_means_quarter$name <- quarter_label
 
-PM2.5_plot_df <- rbind(PM2.5_weekdays_means_all, PM2.5_weekdays_means_Q4) #ADD Q3 data back in?
+PM2.5_plot_df <- rbind(PM2.5_weekdays_means_all, PM2.5_weekdays_means_quarter)
 
 #Calculate hourly means by weekend day
 #NO2
@@ -254,15 +254,15 @@ hours <- paste0(hours2, NO2_weekends$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 NO2_weekends$hours <- hours
 
-NO2_weekends_Q3 <- NO2_weekends %>% filter(between(Date2, q3_start, q3_end)) 
-NO2_weekends_Q4 <- NO2_weekends %>% filter(between(Date2, q4_start, q4_end))
+NO2_weekends_Q3 <- NO2_weekends %>% filter(between(Date2, report_dates$q3_start, report_dates$q3_end)) 
+NO2_weekends_quarter <- NO2_weekends %>% filter(between(Date2, quarter_start, quarter_end))
 NO2_weekends_all <- NO2_weekends
 
 NO2_weekends_means_Q3 <- NO2_weekends_Q3 %>% group_by(hours) %>%                        
   summarise_at(vars(no2),
                list(mean = mean))
 
-NO2_weekends_means_Q4 <- NO2_weekends_Q4 %>% group_by(hours) %>%                        
+NO2_weekends_means_quarter <- NO2_weekends_quarter %>% group_by(hours) %>%                        
   summarise_at(vars(no2),
                list(mean = mean)) 
 
@@ -292,15 +292,15 @@ hours <- paste0(hours2, PM2.5_weekends$hours)
 hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
 PM2.5_weekends$hours <- hours
 
-PM2.5_weekends_Q3 <- PM2.5_weekends %>% filter(between(Date2, q3_start, q3_end)) 
-PM2.5_weekends_Q4 <- PM2.5_weekends %>% filter(between(Date2, q4_start, q4_end))
+PM2.5_weekends_Q3 <- PM2.5_weekends %>% filter(between(Date2, report_dates$q3_start, report_dates$q3_end)) 
+PM2.5_weekends_quarter <- PM2.5_weekends %>% filter(between(Date2, quarter_start, quarter_end))
 PM2.5_weekends_all <- PM2.5_weekends
 
 PM2.5_weekends_means_Q3 <- PM2.5_weekends_Q3 %>% group_by(hours) %>%                        
   summarise_at(vars(pm25),
                list(mean = mean))
 
-PM2.5_weekends_means_Q4 <- PM2.5_weekends_Q4 %>% group_by(hours) %>%                        
+PM2.5_weekends_means_quarter <- PM2.5_weekends_quarter %>% group_by(hours) %>%                        
   summarise_at(vars(pm25),
                list(mean = mean))
 
@@ -316,17 +316,17 @@ PM2.5_weekends_means_all <- PM2.5_weekends_all %>% group_by(hours) %>%
 
 NO2_weekends_means_all$name <- "All data to date"
 NO2_weekends_means_Q3$name <- "Q3"
-NO2_weekends_means_Q4$name <- "Q4"
+NO2_weekends_means_quarter$name <- quarter_label
 
-NO2_plot_weekends_df <- rbind(NO2_weekends_means_all, NO2_weekends_means_Q4) #ADD Q3 data back in?
+NO2_plot_weekends_df <- rbind(NO2_weekends_means_all, NO2_weekends_means_quarter)
 
 #PM2.5
 
 PM2.5_weekends_means_all$name <- "All data to date"
 PM2.5_weekends_means_Q3$name <- "Q3"
-PM2.5_weekends_means_Q4$name <- "Q4"
+PM2.5_weekends_means_quarter$name <- quarter_label
 
-PM2.5_plot_weekends_df <- rbind(PM2.5_weekends_means_all, PM2.5_weekends_means_Q4) #ADD Q3 data back in?
+PM2.5_plot_weekends_df <- rbind(PM2.5_weekends_means_all, PM2.5_weekends_means_quarter)
 
 ```
 
@@ -345,7 +345,7 @@ NO2_plot <- ggplot(NO2_plot_df)+
   annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = plot_legend_labels) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
 NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
@@ -358,7 +358,7 @@ NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
   annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = plot_legend_labels) +
    theme(plot.title = element_text(hjust = 0.5))
 
 plot_grid(NO2_plot, NO2_plot_weekend, align = "h", ncol = 2, rel_widths = c(1/4, 1/3))
@@ -379,7 +379,7 @@ PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df)+
   annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4")) +
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = plot_legend_labels) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
 PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
@@ -392,7 +392,7 @@ PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
   annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = c("All data to date", "Q4"))+
+  scale_fill_manual(values=c("#038476", "#A7D5AF"), name = "Data range", labels = plot_legend_labels)+
    theme(plot.title = element_text(hjust = 0.5))
 
 plot_grid(PM2.5_plot_weekdays, PM2.5_plot_weekends, align = "h", ncol = 2, rel_widths = c(1/4, 1/3)) 
