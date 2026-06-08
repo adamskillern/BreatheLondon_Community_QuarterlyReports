@@ -1,15 +1,28 @@
-# Breathe London Communities API client (https://www.breathelondon-communities.org/developers)
+# Breathe London Communities API client — shared by quarterly report scripts (not multi-site plots).
+# Docs: https://www.breathelondon-communities.org/developers  |  Plot helpers: R/bl_plot_api.R
 
+# --- .env storage and parsing ---
+# Hidden environment object: stores .env values after ${year_of_report} expansion.
+# Other functions read settings through bl_env() instead of parsing the file again.
 .bl_env_expanded <- new.env(parent = emptyenv())
 
 bl_parse_env_file <- function(path = ".env") {
+  # Reads your .env file from disk into a named list of strings (KEY = value).
+  # For example: R’s built-in readRenviron(".env") loads settings but
+  # cannot expand ${year_of_report}.
+  # This function is the first step so the project can read .env manually, then
+  # expand placeholders in the next function.
+
   lines <- readLines(path, warn = FALSE)
   vars <- character()
   for (line in lines) {
+    # Trim spaces so "  KEY=value  " is handled cleanly.
     line <- trimws(line)
+    # Ignore empty lines and whole-line comments (lines starting with #).
     if (!nzchar(line) || startsWith(line, "#")) {
       next
     }
+    # Ignore lines that are not KEY=value (no equals sign).
     if (!grepl("=", line, fixed = TRUE)) {
       next
     }
@@ -19,13 +32,18 @@ bl_parse_env_file <- function(path = ".env") {
   vars
 }
 
-#' Expand ${year_of_report} and other ${var} references in .env values
+# --- .env ${variable} expansion ---
 bl_expand_env_vars <- function(vars, max_passes = 20L) {
+  # Substitutes ${other_key} inside values, e.g. BL_START_DATE uses ${year_of_report}.
+  # Loops up to 20 passes chekcing if the ${name} needs to be replaced.
+  # Errors if you reference a ${name} that doesn’t exist.
+  
   out <- vars
   for (pass in seq_len(max_passes)) {
     prev <- out
     for (key in names(out)) {
       s <- out[[key]]
+      # Find and replace each ${ref} in this value with vars[[ref]].
       repeat {
         hit <- regexpr("\\$\\{([A-Za-z_][A-Za-z0-9_]*)\\}", s, perl = TRUE)
         if (hit[1] == -1L) {
@@ -39,6 +57,7 @@ bl_expand_env_vars <- function(vars, max_passes = 20L) {
       }
       out[[key]] <- s
     }
+    # Stop looping when one full pass changed nothing (all expansions done).
     if (identical(prev, out)) {
       break
     }
@@ -46,7 +65,10 @@ bl_expand_env_vars <- function(vars, max_passes = 20L) {
   out
 }
 
+# --- Apply parsed .env to Sys.setenv and internal cache ---
 bl_apply_env <- function(vars) {
+  # Makes every .env variable visible to R via Sys.setenv() and .bl_env_expanded - this project’s cache.
+  # Called after parse + expand so bl_env() and Sys.getenv() agree. - bl_load_env() calls it.
   rm(list = ls(envir = .bl_env_expanded), envir = .bl_env_expanded)
   for (n in names(vars)) {
     do.call(Sys.setenv, setNames(list(vars[[n]]), n))
@@ -55,8 +77,10 @@ bl_apply_env <- function(vars) {
   invisible(vars)
 }
 
-#' Expanded .env value (after ${year_of_report} substitution)
+# --- Read expanded .env values ---
 bl_env <- function(key, unset = "") {
+  # Returns one setting by name (e.g. "BL_SITE_CODE"), with expanded ${...} already applied.
+  # Falls back to Sys.getenv() if the key is missing or empty in the internal cache.
   if (exists(key, envir = .bl_env_expanded, inherits = FALSE)) {
     val <- get(key, envir = .bl_env_expanded)
     if (nzchar(val)) {
@@ -66,8 +90,10 @@ bl_env <- function(key, unset = "") {
   Sys.getenv(key, unset = unset)
 }
 
-#' Load .env and expand ${...} placeholders
+# --- Load .env from disk ---
 bl_load_env <- function(path = ".env") {
+  # Main entry point: load project .env (parse, expand, apply). Call at script startup.
+  # Returns FALSE invisibly if the file does not exist; TRUE if load succeeded.
   if (!file.exists(path)) {
     return(invisible(FALSE))
   }
@@ -75,7 +101,10 @@ bl_load_env <- function(path = ".env") {
   invisible(TRUE)
 }
 
+# --- API key and base URL ---
 bl_api_key <- function() {
+  # Returns your BREATHE_API_KEY from the environment (required on every API request).
+  # Stops with a clear error if the key is missing — copy .env.example to .env first.
   key <- Sys.getenv("BREATHE_API_KEY", unset = "")
   if (!nzchar(key)) {
     stop(
@@ -87,6 +116,8 @@ bl_api_key <- function() {
 }
 
 bl_api_base <- function() {
+  # Returns the API root URL (default: breathelondon-communities.org/api).
+  # Strips a trailing slash so paths can be pasted safely onto the base.
   base <- Sys.getenv(
     "BREATHE_API_BASE",
     unset = "https://api.breathelondon-communities.org/api"
@@ -94,7 +125,10 @@ bl_api_base <- function() {
   sub("/$", "", base)
 }
 
+# --- Authenticated GET helper (httr2) ---
 bl_api_get <- function(path, query = list()) {
+  # Performs an authenticated HTTP GET and parses the JSON response into R objects.
+  # Adds ?key=YOUR_API_KEY; use path like "/listSensors/" (see bl_list_sensors).
   if (!requireNamespace("httr2", quietly = TRUE)) {
     stop("Install httr2: install.packages('httr2')", call. = FALSE)
   }
@@ -104,6 +138,7 @@ bl_api_get <- function(path, query = list()) {
     httr2::req_url_query(key = bl_api_key(), !!!query) |>
     httr2::req_perform()
 
+  # Treat HTTP 4xx/5xx as failure and include the URL in the error message.
   if (httr2::resp_status(resp) >= 400) {
     stop(
       "API request failed (HTTP ", httr2::resp_status(resp), "): ", url,
@@ -114,17 +149,14 @@ bl_api_get <- function(path, query = list()) {
   httr2::resp_body_json(resp, simplifyVector = TRUE)
 }
 
-#' List all sensors (GET /listSensors or /ListSensors)
+# --- Sensor metadata (listSensors; filter JSON for one SiteCode) ---
 bl_list_sensors <- function() {
+  # Downloads metadata for all Breathe London Community nodes (SiteCode, lat/lon, dates, etc.).
+  # Used by fetch_sensors.R to write data/raw/listSensors.json.
   bl_api_get("/listSensors/")
 }
 
-#' Single sensor metadata (GET /Sensor/{site_code})
-bl_get_sensor <- function(site_code) {
-  bl_api_get(paste0("/Sensor/", site_code))
-}
-
-#' Hourly readings (GET /getClarityData/...)
+# --- Hourly pollutant readings (getClarityData) ---
 bl_get_clarity_data <- function(
     site_code,
     species,
@@ -132,6 +164,8 @@ bl_get_clarity_data <- function(
     end_time,
     averaging = "Hourly"
 ) {
+  # Fetches hourly air-quality readings for one site between start and end (API path times).
+  # species is the API code, e.g. "IPM25" (PM2.5) or "INO2" (NO2); averaging is usually "Hourly".
   start_enc <- utils::URLencode(as.character(start_time), reserved = TRUE)
   end_enc <- utils::URLencode(as.character(end_time), reserved = TRUE)
   path <- paste0(
@@ -145,16 +179,19 @@ bl_get_clarity_data <- function(
   bl_api_get(path)
 }
 
-#' Format API times for path segments (e.g. "Mon 11 Apr 2022 11:00:00 GMT")
+# --- GMT date/time formatting for API path segments ---
 bl_format_api_time <- function(x) {
+  # Converts a POSIXct datetime to the exact string format the API expects in the URL.
+  # Example output: "Mon 11 Apr 2022 11:00:00 GMT" (weekday + GMT timezone).
   if (!inherits(x, "POSIXt")) {
     x <- as.POSIXct(x, tz = "GMT")
   }
   paste0(format(x, "%a %d %b %Y %H:%M:%S", tz = "GMT"), " GMT")
 }
 
-#' Parse date/time text (with or without leading weekday) to POSIXct GMT
 bl_parse_gmt_datetime <- function(x) {
+  # Parses a date/time string from .env into POSIXct (GMT/UTC).
+  # Accepts with or without a leading weekday (e.g. "Wed" is optional in .env).
   x <- trimws(x)
   x <- sub("\\s+GMT\\s*$", "", x, ignore.case = TRUE)
   if (grepl("^[A-Za-z]{3} ", x)) {
@@ -168,13 +205,16 @@ bl_parse_gmt_datetime <- function(x) {
   dt
 }
 
-#' Build getClarityData path time: adds weekday from calendar (you omit it in .env)
 bl_to_api_gmt_string <- function(x) {
+  # Turns a .env date string into an API-ready path time (parse + format).
+  # Used by bl_resolve_fetch_start/end for report date windows.
   bl_format_api_time(bl_parse_gmt_datetime(x))
 }
 
-#' API start time from BL_START_DATE (preferred) or BL_START_TIME (legacy)
+# --- Report fetch window (BL_START_DATE / BL_END_DATE) ---
 bl_resolve_fetch_start <- function() {
+  # Report-only start time: reads BL_START_DATE from .env and formats for getClarityData.
+  # Returns "" if unset; legacy alias BL_START_TIME is used if BL_START_DATE is empty.
   raw <- trimws(bl_env("BL_START_DATE"))
   if (!nzchar(raw)) {
     raw <- trimws(bl_env("BL_START_TIME"))
@@ -186,6 +226,8 @@ bl_resolve_fetch_start <- function() {
 }
 
 bl_resolve_fetch_end <- function() {
+  # Report-only end time: reads BL_END_DATE from .env and formats for getClarityData.
+  # Returns "" if unset; legacy alias BL_END_TIME is used if BL_END_DATE is empty.
   raw <- trimws(bl_env("BL_END_DATE"))
   if (!nzchar(raw)) {
     raw <- trimws(bl_env("BL_END_TIME"))
@@ -196,7 +238,10 @@ bl_resolve_fetch_end <- function() {
   bl_to_api_gmt_string(raw)
 }
 
+# --- Quarterly report quarter boundaries from .env ---
 bl_env_report_dates <- function() {
+  # Returns a list of Date objects for Q3/Q4 panels in the quarterly PDF report.
+  # Values come from BL_Q3_START, BL_Q3_END, BL_Q4_START, BL_Q4_END, BL_REPORT_YEAR.
   list(
     report_year = bl_env("BL_REPORT_YEAR", "2022"),
     q3_start = as.Date(bl_env("BL_Q3_START", "2022-07-01")),
@@ -206,12 +251,15 @@ bl_env_report_dates <- function() {
   )
 }
 
-#' Convert getClarityData JSON to report-ready data frame (date, value_col)
+# --- Slim getClarityData records to date + pollutant column ---
 bl_clarity_to_df <- function(records, value_col) {
+  # Shrinks raw API rows to two columns: date and pm25 or no2 (from DateTime and ScaledValue).
+  # Drops SiteCode, DurationNS, etc. — those are handled elsewhere if needed.
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
     stop("Install jsonlite", call. = FALSE)
   }
 
+  # Empty API response → empty data.frame with correct column names.
   if (is.null(records) || length(records) == 0) {
     empty <- data.frame(
       date = character(),
@@ -221,6 +269,7 @@ bl_clarity_to_df <- function(records, value_col) {
     return(empty)
   }
 
+  # If JSON came back as a nested list, flatten to a standard data.frame first.
   if (!is.data.frame(records)) {
     records <- jsonlite::fromJSON(jsonlite::toJSON(records, auto_unbox = TRUE))
   }
@@ -235,7 +284,142 @@ bl_clarity_to_df <- function(records, value_col) {
   out
 }
 
-#' Fetch hourly NO2 and PM2.5 as data frames (uses .env when args omitted)
+# --- Per-site API window from listSensors metadata ---
+bl_read_sensors_json <- function(path = "data/raw/listSensors.json") {
+  if (!file.exists(path)) {
+    stop("Sensor list not found: ", path, "\nRun: Rscript scripts/fetch_sensors.R", call. = FALSE)
+  }
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("Install jsonlite", call. = FALSE)
+  }
+  sensors <- jsonlite::fromJSON(path, simplifyVector = TRUE)[[1]]
+  sensors$SiteCode <- as.character(sensors$SiteCode)
+  sensors$EndDate <- as.character(sensors$EndDate)
+  sensors$EndDate[sensors$EndDate == ""] <- NA_character_
+  sensors
+}
+
+bl_site_api_start <- function(site, sensors) {
+  row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
+  bl_format_api_time(as.POSIXct(row$StartDate, tz = "UTC"))
+}
+
+bl_site_api_end <- function(site, sensors) {
+  row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
+  end_raw <- row$EndDate[1]
+  if (is.na(end_raw) || !nzchar(end_raw)) {
+    end_raw <- row$HourlyBulletinEnd[1]
+  }
+  if (is.na(end_raw) || !nzchar(as.character(end_raw))) {
+    end_raw <- Sys.time()
+  }
+  bl_format_api_time(as.POSIXct(end_raw, tz = "UTC"))
+}
+
+bl_bind_site_readings <- function(parts) {
+  parts <- Filter(function(x) !is.null(x) && nrow(x) > 0, parts)
+  if (!length(parts)) {
+    return(data.frame(
+      SiteCode = character(),
+      date = character(),
+      stringsAsFactors = FALSE
+    ))
+  }
+  do.call(rbind, parts)
+}
+
+bl_fetch_site_species <- function(site, species, value_col, start, end) {
+  tryCatch(
+    {
+      df <- bl_clarity_to_df(
+        bl_get_clarity_data(site, species, start, end),
+        value_col
+      )
+      if (nrow(df)) {
+        cbind(SiteCode = site, df, stringsAsFactors = FALSE)
+      } else {
+        NULL
+      }
+    },
+    error = function(e) {
+      warning(site, " ", value_col, ": ", conditionMessage(e), call. = FALSE)
+      NULL
+    }
+  )
+}
+
+# --- All-site NO2 + PM2.5 fetch (per-site StartDate → EndDate) and optional CSV save ---
+bl_fetch_all_sites_readings <- function(
+    sensors_path = "data/raw/listSensors.json",
+    pm25_path = "data/processed/pm25_all_sites.csv",
+    no2_path = "data/processed/no2_all_sites.csv",
+    species_pm25 = NULL,
+    species_no2 = NULL,
+    sites = NULL,
+    save = TRUE,
+    verbose = TRUE
+) {
+  if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
+    bl_load_env()
+  }
+
+  species_pm25 <- species_pm25 %||% bl_env("BL_SPECIES_PM25", "IPM25")
+  species_no2 <- species_no2 %||% bl_env("BL_SPECIES_NO2", "INO2")
+
+  sensors <- bl_read_sensors_json(sensors_path)
+  if (is.null(sites)) {
+    sites <- unique(sensors$SiteCode)
+  } else {
+    sites <- unique(as.character(sites))
+  }
+
+  if (verbose) {
+    message(
+      "Sites: ", length(sites),
+      " (per-site StartDate → EndDate from listSensors.json)"
+    )
+  }
+
+  pm25_parts <- vector("list", length(sites))
+  no2_parts <- vector("list", length(sites))
+  names(pm25_parts) <- sites
+  names(no2_parts) <- sites
+
+  for (i in seq_along(sites)) {
+    site <- sites[[i]]
+    start <- bl_site_api_start(site, sensors)
+    end <- bl_site_api_end(site, sensors)
+    if (verbose) {
+      message("[", i, "/", length(sites), "] ", site, "  ", start, " → ", end)
+    }
+
+    pm25_parts[[site]] <- bl_fetch_site_species(site, species_pm25, "pm25", start, end)
+    no2_parts[[site]] <- bl_fetch_site_species(site, species_no2, "no2", start, end)
+  }
+
+  pm25 <- bl_bind_site_readings(pm25_parts)
+  no2 <- bl_bind_site_readings(no2_parts)
+  if (!"pm25" %in% names(pm25)) {
+    pm25$pm25 <- numeric()
+  }
+  if (!"no2" %in% names(no2)) {
+    no2$no2 <- numeric()
+  }
+
+  if (save) {
+    dir.create(dirname(pm25_path), recursive = TRUE, showWarnings = FALSE)
+    utils::write.csv(pm25, pm25_path, row.names = FALSE)
+    utils::write.csv(no2, no2_path, row.names = FALSE)
+    if (verbose) {
+      message("Wrote ", pm25_path, " (", nrow(pm25), " rows)")
+      message("Wrote ", no2_path, " (", nrow(no2), " rows)")
+    }
+  }
+
+  invisible(list(pm25 = pm25, no2 = no2))
+}
+
+# --- Single-site NO2 + PM2.5 fetch for quarterly report ---
 bl_fetch_readings <- function(
     site_code = NULL,
     start_time = NULL,
@@ -243,10 +427,13 @@ bl_fetch_readings <- function(
     species_no2 = NULL,
     species_pm25 = NULL
 ) {
+  # Fetches one site's hourly NO2 and PM2.5 for the quarterly report time window.
+  # Used by fetch_readings.R; defaults come from .env when arguments are NULL.
   if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
     bl_load_env()
   }
 
+  # Fill missing arguments from .env (see %||% at bottom of this file).
   site_code <- site_code %||% bl_env("BL_SITE_CODE")
   start_time <- start_time %||% bl_resolve_fetch_start()
   end_time <- end_time %||% bl_resolve_fetch_end()
@@ -270,8 +457,10 @@ bl_fetch_readings <- function(
   )
 }
 
-#' Load report data from CSV files or API (BL_DATA_SOURCE=csv|api)
+# --- Load report data from CSV or live API ---
 bl_load_report_data <- function(source = NULL) {
+  # Supplies NO2 + PM2.5 data.frames to QuarterlyAQtrends_git.Rmd (CSV or live API).
+  # Controlled by BL_DATA_SOURCE: "csv" reads files; "api" calls bl_fetch_readings().
   bl_load_env()
   source <- tolower(source %||% bl_env("BL_DATA_SOURCE", "csv"))
 
@@ -296,6 +485,7 @@ bl_load_report_data <- function(source = NULL) {
   no2 <- utils::read.csv(no2_path, stringsAsFactors = FALSE)
   pm25 <- utils::read.csv(pm25_path, stringsAsFactors = FALSE)
 
+  # Portal CSV export uses different column names; rename when BL_BREATHE_EXPORT=1.
   if (identical(bl_env("BL_BREATHE_EXPORT"), "1")) {
     if (!requireNamespace("dplyr", quietly = TRUE)) {
       stop("Install dplyr for BL_BREATHE_EXPORT column renaming.", call. = FALSE)
@@ -309,6 +499,9 @@ bl_load_report_data <- function(source = NULL) {
   list(no2 = no2, pm25 = pm25)
 }
 
+# --- Null/empty coalesce for optional arguments ---
+# Infix operator: use the left value if it is non-empty, otherwise use the right (default).
+# Example: site_code %||% bl_env("BL_SITE_CODE") means "use argument, else .env".
 `%||%` <- function(x, y) {
   if (is.null(x) || length(x) == 0 || !nzchar(x[1])) y else x
 }

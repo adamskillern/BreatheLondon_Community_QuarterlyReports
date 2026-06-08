@@ -2,9 +2,17 @@
 title: "Breathe London Community Programme"
 author: |
   | Dr. Kayla Schulte, Environmental Research Group, Imperial College London
-  | EMAIL: k.schulte21@imperial.ac.uk
+  | k.schulte21@imperial.ac.uk
 output: pdf_document
 date: "`r format(Sys.Date(), '%d %b %Y')`" # Today's date
+colorlinks: true
+header-includes:
+  - \usepackage{helvet}
+  - \renewcommand{\familydefault}{\sfdefault}
+  - \usepackage{xcolor}
+  - \definecolor{blurl}{HTML}{409894}
+  - \definecolor{blgrey}{HTML}{888888}
+  - \AtBeginDocument{\hypersetup{urlcolor=blurl, linkcolor=blurl}}
 ---
 
 ```{r setup, include=FALSE}
@@ -34,6 +42,30 @@ q4_start <- report_dates$q4_start
 q4_end <- report_dates$q4_end
 report_year <- report_dates$report_year
 
+current_quarter <- (lubridate::month(Sys.Date()) - 1L) %/% 3L + 1L
+quarter_headings <- c(
+  "Quarter 1 (1 January to 31 March)",
+  "Quarter 2 (1 April to 30 June)",
+  "Quarter 3 (1 July to 30 September)",
+  "Quarter 4 (1 October to 31 December)"
+)
+quarter_heading <- paste(quarter_headings[current_quarter], "in", report_year)
+
+quarter_trend_texts <- c(
+  "(Q1) Jan-March: In this quarter we may see higher NO$_2$ levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.",
+  "(Q2) April-June: We may continue to see some particulate episodes in April as the farming fertiliser season continues and we have high pressure systems creating stagnant conditions. May and June are generally low pollution months.",
+  "(Q3) July-Sept: The summer months are when we are likely to see ozone episodes. Ozone is not emitted but rather formed in the atmosphere from other pollutants in the heat of the sun. Generally, ozone (O$_3$) builds through the day peaking between 16:00-20:00.",
+  "(Q4) Oct-Dec: Autumn is typically a season of lower pollution, with the wind and rain helping to keep pollution low. As we get into December though we do sometimes see winter smogs on cold, clear, crisp mornings where pollution from traffic and heating is trapped near the ground."
+)
+
+bl_format_quarter_line <- function(q, text) {
+  if (q == current_quarter) {
+    sprintf("\\textcolor{blurl}{\\textbf{%s}}", text)
+  } else {
+    sprintf("\\textcolor{blgrey}{%s}", text)
+  }
+}
+
 ```
 
 \centering
@@ -44,19 +76,17 @@ report_year <- report_dates$report_year
 
 \raggedright
 
-## Quarter 4 (1 October to 31 December) in `r report_year`
+## `r quarter_heading`
 
 This document presents hourly average pollution concentration measured at your Breathe London Community Programme node over the past 3 months. 
 
 ## General Air Pollution Trends in London 
 
-(Q1) Jan-March: In this quarter we may see higher NO~2~ levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.
-
-(Q2) April-June: We may continue to see some particulate episodes in April as the farming fertiliser season continues and we have high pressure systems creating stagnant conditions. May and June are generally low pollution months.
-
-(Q3) July-Sept: The summer months are when we are likely to see ozone episodes. Ozone is not emitted but rather formed in the atmosphere from other pollutants in the heat of the sun. Generally, ozone (O~3~) builds through the day peaking between 16:00-20:00.
-
-**(Q4) Oct-Dec: Autumn is typically a season of lower pollution, with the wind and rain helping to keep pollution low. As we get into December though we do sometimes see  winter smogs on  cold, clear, crisp mornings where pollution from traffic and heating is trapped near the ground.**
+```{r quarter-trends, echo=FALSE, results='asis'}
+for (q in seq_along(quarter_trend_texts)) {
+  cat(bl_format_quarter_line(q, quarter_trend_texts[q]), "\n\n")
+}
+```
 
 
 ```{r, echo=FALSE}
