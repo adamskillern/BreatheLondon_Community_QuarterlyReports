@@ -1,9 +1,9 @@
 #!/usr/bin/env Rscript
 # Fetch hourly NO2 and PM2.5 for one site; write CSVs for the quarterly report.
 #
-# Required in .env:
-#   BREATHE_API_KEY, BL_SITE_CODE, BL_START_DATE, BL_END_DATE
-#   (weekday added automatically for API; use ${year_of_report} in dates)
+# Required in .env: BREATHE_API_KEY, BL_SITE_CODE
+# Default date range: last completed calendar quarter (see scripts/show_api_times.R)
+# Or pass site + start + end as CLI arguments
 #
 # Optional: BL_SPECIES_NO2 (default INO2), BL_SPECIES_PM25 (default IPM25)
 
@@ -33,9 +33,8 @@ end_time <- if (length(args) >= 3) {
 
 if (!nzchar(site_code) || !nzchar(start_time) || !nzchar(end_time)) {
   stop(
-    "Set BL_SITE_CODE, BL_START_DATE, BL_END_DATE in .env\n",
-    "  Example: BL_START_DATE=01 Jan ${year_of_report} 00:00:00 GMT\n",
-    "Or: Rscript scripts/fetch_readings.R SITE \"01 Jan 2025 00:00:00 GMT\" \"31 Dec 2025 23:00:00 GMT\"",
+    "Set BL_SITE_CODE in .env\n",
+    "Or: Rscript scripts/fetch_readings.R SITE \"01 Jan 2025 00:00:00 GMT\" \"31 Mar 2025 23:00:00 GMT\"",
     call. = FALSE
   )
 }

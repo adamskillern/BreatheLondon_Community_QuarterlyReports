@@ -211,43 +211,100 @@ bl_to_api_gmt_string <- function(x) {
   bl_format_api_time(bl_parse_gmt_datetime(x))
 }
 
-# --- Report fetch window (BL_START_DATE / BL_END_DATE) ---
-bl_resolve_fetch_start <- function() {
-  # Report-only start time: reads BL_START_DATE from .env and formats for getClarityData.
-  # Returns "" if unset; legacy alias BL_START_TIME is used if BL_START_DATE is empty.
-  raw <- trimws(bl_env("BL_START_DATE"))
-  if (!nzchar(raw)) {
-    raw <- trimws(bl_env("BL_START_TIME"))
+# --- Quarterly report date helpers ---
+bl_quarter_bounds <- function(quarter, year) {
+  if (!requireNamespace("lubridate", quietly = TRUE)) {
+    stop("Install lubridate", call. = FALSE)
   }
-  if (!nzchar(raw)) {
-    return("")
-  }
-  bl_to_api_gmt_string(raw)
+  starts <- c(1L, 4L, 7L, 10L)
+  ends <- c(3L, 6L, 9L, 12L)
+  sm <- starts[quarter]
+  em <- ends[quarter]
+  start <- lubridate::ymd(sprintf("%d-%02d-01", year, sm))
+  end <- lubridate::ceiling_date(lubridate::ymd(sprintf("%d-%02d-01", year, em)), "month") - 1L
+  list(quarter = quarter, year = year, start = start, end = end)
 }
 
-bl_resolve_fetch_end <- function() {
-  # Report-only end time: reads BL_END_DATE from .env and formats for getClarityData.
-  # Returns "" if unset; legacy alias BL_END_TIME is used if BL_END_DATE is empty.
-  raw <- trimws(bl_env("BL_END_DATE"))
-  if (!nzchar(raw)) {
-    raw <- trimws(bl_env("BL_END_TIME"))
+bl_quarter_api_range <- function(start_date, end_date) {
+  if (!requireNamespace("lubridate", quietly = TRUE)) {
+    stop("Install lubridate", call. = FALSE)
   }
-  if (!nzchar(raw)) {
-    return("")
-  }
-  bl_to_api_gmt_string(raw)
+  start_api <- bl_format_api_time(
+    lubridate::as_datetime(paste0(start_date, " 00:00:00"), tz = "GMT")
+  )
+  end_api <- bl_format_api_time(
+    lubridate::as_datetime(paste0(end_date, " 23:00:00"), tz = "GMT")
+  )
+  list(start_api = start_api, end_api = end_api)
 }
 
-# --- Quarterly report quarter boundaries from .env ---
-bl_env_report_dates <- function() {
-  # Returns a list of Date objects for Q3/Q4 panels in the quarterly PDF report.
-  # Values come from BL_Q3_START, BL_Q3_END, BL_Q4_START, BL_Q4_END, BL_REPORT_YEAR.
+bl_last_completed_quarter <- function(ref = Sys.Date()) {
+  # Most recently finished calendar quarter relative to ref (default: today).
+  if (!requireNamespace("lubridate", quietly = TRUE)) {
+    stop("Install lubridate", call. = FALSE)
+  }
+  ref <- as.Date(ref)
+  year <- lubridate::year(ref)
+  current_q <- (lubridate::month(ref) - 1L) %/% 3L + 1L
+  if (current_q == 1L) {
+    quarter <- 4L
+    year <- year - 1L
+  } else {
+    quarter <- current_q - 1L
+  }
+
+  bounds <- bl_quarter_bounds(quarter, year)
+  fetch_start <- lubridate::ymd(sprintf("%d-01-01", year))
+  fetch_end <- lubridate::ymd(sprintf("%d-12-31", year))
+  api <- bl_quarter_api_range(fetch_start, fetch_end)
+
+  c(
+    bounds,
+    list(
+      fetch_start = fetch_start,
+      fetch_end = fetch_end,
+      fetch_start_api = api$start_api,
+      fetch_end_api = api$end_api
+    )
+  )
+}
+
+bl_previous_quarter <- function(quarter, year) {
+  if (quarter == 1L) {
+    bl_quarter_bounds(4L, year - 1L)
+  } else {
+    bl_quarter_bounds(quarter - 1L, year)
+  }
+}
+
+# --- Report fetch window: full report calendar year (all data to date in charts) ---
+bl_resolve_fetch_start <- function(ref = Sys.Date()) {
+  bl_last_completed_quarter(ref)$fetch_start_api
+}
+
+bl_resolve_fetch_end <- function(ref = Sys.Date()) {
+  bl_last_completed_quarter(ref)$fetch_end_api
+}
+
+# --- Quarterly report quarter boundaries (always last completed calendar quarter) ---
+bl_env_report_dates <- function(ref = Sys.Date()) {
+  # Used by QuarterlyAQtrends_git.Rmd for bar-chart filters and headings.
+  # All fetched rows = "All data to date"; quarter_start → quarter_end = last quarter overlay.
+  report_q <- bl_last_completed_quarter(ref)
+  prev_q <- bl_previous_quarter(report_q$quarter, report_q$year)
   list(
-    report_year = bl_env("BL_REPORT_YEAR", "2022"),
-    q3_start = as.Date(bl_env("BL_Q3_START", "2022-07-01")),
-    q3_end = as.Date(bl_env("BL_Q3_END", "2022-09-30")),
-    q4_start = as.Date(bl_env("BL_Q4_START", "2022-10-01")),
-    q4_end = as.Date(bl_env("BL_Q4_END", "2022-12-31"))
+    report_year = as.character(report_q$year),
+    report_quarter = report_q$quarter,
+    quarter_start = report_q$start,
+    quarter_end = report_q$end,
+    fetch_start = report_q$fetch_start,
+    fetch_end = report_q$fetch_end,
+    prev_quarter_start = prev_q$start,
+    prev_quarter_end = prev_q$end,
+    q3_start = prev_q$start,
+    q3_end = prev_q$end,
+    q4_start = report_q$start,
+    q4_end = report_q$end
   )
 }
 
@@ -442,8 +499,8 @@ bl_fetch_readings <- function(
 
   if (!nzchar(site_code) || !nzchar(start_time) || !nzchar(end_time)) {
     stop(
-      "Set BL_SITE_CODE and BL_START_DATE / BL_END_DATE in .env ",
-      "(e.g. 01 Jan ${year_of_report} 00:00:00 GMT — weekday added automatically).",
+      "Set BL_SITE_CODE in .env ",
+      "(report dates default to last completed quarter via bl_resolve_fetch_start/end).",
       call. = FALSE
     )
   }
