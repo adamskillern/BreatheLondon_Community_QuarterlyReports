@@ -37,10 +37,10 @@ invisible(lapply(packages, require, character.only = TRUE))
 
 # BL_DATA_SOURCE=csv (default) or api — see .env.example
 report_data <- bl_load_report_data()
-NO2_DATA_FRAME <- report_data$no2 %>%
-  mutate(no2 = na_if(no2, 0))
-PM25_DATA_FRAME <- report_data$pm25 %>%
-  mutate(pm25 = na_if(pm25, 0))
+NO2_DATA_FRAME <- report_data$no2 #%>%
+  # mutate(no2 = na_if(no2, 0))
+PM25_DATA_FRAME <- report_data$pm25 #%>%
+  # mutate(pm25 = na_if(pm25, 0))
 
 report_dates <- bl_env_report_dates()
 organisation_name <- bl_site_organisation_name()
@@ -86,6 +86,15 @@ bl_format_quarter_line <- function(q, text) {
 
 WHO_NO2_DAILY <- 25
 WHO_PM25_DAILY <- 15
+
+bl_typical_peak_methodology_text <- paste(
+  "Typical peak time ranges are based on the day(s) with the highest peak hourly average (within 2\\% of the maximum). The reported range spans up to five contiguous hours centred on the peak hour and includes neighbouring hours with average values at or above 92\\% of the peak."
+)
+bl_typical_peak_footnote_mark <- "\\textsuperscript{1}"
+
+bl_append_typical_peak_footnote <- function(text) {
+  sprintf("%s%s", text, bl_typical_peak_footnote_mark)
+}
 
 bl_pollutant_summary <- function(df, value_col, threshold, start_date = NULL, end_date = NULL) {
   period_df <- df %>%
@@ -340,12 +349,12 @@ bl_format_typical_peak_bullet <- function(period_df, value_col) {
     return(NULL)
   }
   if (is.null(weekday_peak)) {
-    return(sprintf("On average, %s.", weekend_peak))
+    return(bl_append_typical_peak_footnote(sprintf("On average, %s.", weekend_peak)))
   }
   if (is.null(weekend_peak)) {
-    return(sprintf("On average, %s.", weekday_peak))
+    return(bl_append_typical_peak_footnote(sprintf("On average, %s.", weekday_peak)))
   }
-  sprintf("On average, %s and %s.", weekday_peak, weekend_peak)
+  bl_append_typical_peak_footnote(sprintf("On average, %s and %s.", weekday_peak, weekend_peak))
 }
 
 bl_summarise_pollutant_peaks <- function(df, value_col) {
@@ -742,6 +751,12 @@ bl_emit_summary_box(
   "To date",
   border_color = "blsummarytotalborder"
 )
+```
+
+```{r typical-peak-footnote, echo=FALSE, results='asis'}
+cat("\\begingroup\\fontsize{0.8em}{0.8em}\\selectfont\n")
+cat("\\textsuperscript{1} ", bl_typical_peak_methodology_text, "\n", sep = "")
+cat("\\endgroup\n")
 ```
 
 \thispagestyle{plain}
