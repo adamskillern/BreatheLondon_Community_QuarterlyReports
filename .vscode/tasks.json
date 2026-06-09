@@ -16,6 +16,13 @@
       "group": "build"
     },
     {
+      "label": "Breathe: Generate PM2.5 all-sites plot",
+      "type": "shell",
+      "command": "Rscript scripts/generate_plots.R",
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": "build"
+    },
+    {
       "label": "Breathe: Knit quarterly report (PDF)",
       "type": "shell",
       "command": "Rscript -e \"rmarkdown::render('QuarterlyAQtrends_git.Rmd')\"",
