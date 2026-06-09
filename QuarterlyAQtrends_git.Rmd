@@ -37,8 +37,10 @@ invisible(lapply(packages, require, character.only = TRUE))
 
 # BL_DATA_SOURCE=csv (default) or api — see .env.example
 report_data <- bl_load_report_data()
-NO2_DATA_FRAME <- report_data$no2
-PM25_DATA_FRAME <- report_data$pm25
+NO2_DATA_FRAME <- report_data$no2 %>%
+  mutate(no2 = na_if(no2, 0))
+PM25_DATA_FRAME <- report_data$pm25 %>%
+  mutate(pm25 = na_if(pm25, 0))
 
 report_dates <- bl_env_report_dates()
 organisation_name <- bl_site_organisation_name()

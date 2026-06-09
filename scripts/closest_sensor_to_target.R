@@ -4,7 +4,24 @@
 library(jsonlite)
 library(tidyverse)
 
-BL_PROJECT_ROOT <- "~/Desktop/Code/BreatheLondon_Community_QuarterlyReports"
+bl_project_root <- function() {
+  candidates <- c(
+    Sys.getenv("BL_PROJECT_ROOT", unset = ""),
+    getwd(),
+    if (basename(getwd()) == "scripts") normalizePath("..", mustWork = FALSE)
+  )
+  for (root in unique(candidates[nzchar(candidates)])) {
+    root <- normalizePath(root, mustWork = FALSE)
+    if (file.exists(file.path(root, "R", "bl_api.R"))) {
+      return(root)
+    }
+  }
+  stop(
+    "Could not find project root (folder with R/bl_api.R). ",
+    "setwd() to the repo root or set BL_PROJECT_ROOT.",
+    call. = FALSE
+  )
+}
 
 # Calculate the distance between two points on the Earth's surface
 earth_dist_km <- function(lat1, lon1, lat2, lon2) {
@@ -23,7 +40,7 @@ earth_dist_km <- function(lat1, lon1, lat2, lon2) {
 find_nearest_active_site <- function(
     site_code = Sys.getenv("BL_SITE_CODE"),  # default: read from .env after load
     sensors_path = "data/raw/listSensors.json", # cached sensor list (run fetch_sensors.R)
-    project_root = BL_PROJECT_ROOT,
+    project_root = NULL,
     load_dotenv = TRUE,   # if TRUE, read .env so BL_SITE_CODE is set
     verbose = TRUE) {     # if TRUE, print a short summary to the console
 
@@ -38,8 +55,11 @@ find_nearest_active_site <- function(
   old_wd <- getwd()
   on.exit(setwd(old_wd), add = TRUE)
 
+  if (is.null(project_root)) {
+    project_root <- bl_project_root()
+  }
   # Relative paths like "data/raw/..." only work from the project root
-  setwd(path.expand(project_root))
+  setwd(project_root)
 
   # .env is NOT loaded automatically in R — we must call readRenviron()
   if (load_dotenv && file.exists(".env")) {
@@ -104,10 +124,7 @@ BL_WHO_NO2 <- 25
 BL_WHO_PM25 <- 15
 
 bl_ensure_project_root <- function() {
-  root <- path.expand(BL_PROJECT_ROOT)
-  if (!file.exists(file.path(root, "R", "bl_api.R"))) {
-    stop("Project root not found: ", root)
-  }
+  root <- bl_project_root()
   setwd(root)
   invisible(root)
 }
