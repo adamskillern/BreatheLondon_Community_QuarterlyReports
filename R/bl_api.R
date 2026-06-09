@@ -253,37 +253,32 @@ bl_last_completed_quarter <- function(ref = Sys.Date()) {
     quarter <- current_q - 1L
   }
 
-  bounds <- bl_quarter_bounds(quarter, year)
-  fetch_start <- lubridate::ymd(sprintf("%d-01-01", year))
-  fetch_end <- lubridate::ymd(sprintf("%d-12-31", year))
-  api <- bl_quarter_api_range(fetch_start, fetch_end)
-
-  c(
-    bounds,
-    list(
-      fetch_start = fetch_start,
-      fetch_end = fetch_end,
-      fetch_start_api = api$start_api,
-      fetch_end_api = api$end_api
-    )
-  )
+  bl_quarter_bounds(quarter, year)
 }
 
-bl_previous_quarter <- function(quarter, year) {
-  if (quarter == 1L) {
-    bl_quarter_bounds(4L, year - 1L)
-  } else {
-    bl_quarter_bounds(quarter - 1L, year)
+# --- Report fetch window: full site deployment (StartDate → EndDate) ---
+bl_resolve_site_fetch_window <- function(
+    site_code = NULL,
+    sensors_path = "data/raw/listSensors.json"
+) {
+  if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
+    bl_load_env()
   }
+  site_code <- site_code %||% bl_env("BL_SITE_CODE")
+  if (!nzchar(site_code)) {
+    stop("Set BL_SITE_CODE in .env", call. = FALSE)
+  }
+  sensors <- bl_read_sensors_json(sensors_path)
+  rng <- bl_site_date_range(site_code, sensors)
+  c(rng, list(site_code = site_code))
 }
 
-# --- Report fetch window: full report calendar year (all data to date in charts) ---
-bl_resolve_fetch_start <- function(ref = Sys.Date()) {
-  bl_last_completed_quarter(ref)$fetch_start_api
+bl_resolve_fetch_start <- function(site_code = NULL, sensors_path = "data/raw/listSensors.json") {
+  bl_resolve_site_fetch_window(site_code, sensors_path)$start_api
 }
 
-bl_resolve_fetch_end <- function(ref = Sys.Date()) {
-  bl_last_completed_quarter(ref)$fetch_end_api
+bl_resolve_fetch_end <- function(site_code = NULL, sensors_path = "data/raw/listSensors.json") {
+  bl_resolve_site_fetch_window(site_code, sensors_path)$end_api
 }
 
 # --- Quarterly report quarter boundaries (always last completed calendar quarter) ---
@@ -291,20 +286,14 @@ bl_env_report_dates <- function(ref = Sys.Date()) {
   # Used by QuarterlyAQtrends_git.Rmd for bar-chart filters and headings.
   # All fetched rows = "All data to date"; quarter_start → quarter_end = last quarter overlay.
   report_q <- bl_last_completed_quarter(ref)
-  prev_q <- bl_previous_quarter(report_q$quarter, report_q$year)
+  fetch <- bl_resolve_site_fetch_window()
   list(
     report_year = as.character(report_q$year),
     report_quarter = report_q$quarter,
     quarter_start = report_q$start,
     quarter_end = report_q$end,
-    fetch_start = report_q$fetch_start,
-    fetch_end = report_q$fetch_end,
-    prev_quarter_start = prev_q$start,
-    prev_quarter_end = prev_q$end,
-    q3_start = prev_q$start,
-    q3_end = prev_q$end,
-    q4_start = report_q$start,
-    q4_end = report_q$end
+    fetch_start = fetch$start,
+    fetch_end = fetch$end
   )
 }
 
@@ -356,21 +345,54 @@ bl_read_sensors_json <- function(path = "data/raw/listSensors.json") {
   sensors
 }
 
-bl_site_api_start <- function(site, sensors) {
+bl_site_date_range <- function(site, sensors) {
   row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
-  bl_format_api_time(as.POSIXct(row$StartDate, tz = "UTC"))
-}
-
-bl_site_api_end <- function(site, sensors) {
-  row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
+  if (!nrow(row)) {
+    stop("Site not found in sensor list: ", site, call. = FALSE)
+  }
+  start_dt <- as.POSIXct(row$StartDate, tz = "UTC")
   end_raw <- row$EndDate[1]
   if (is.na(end_raw) || !nzchar(end_raw)) {
     end_raw <- row$HourlyBulletinEnd[1]
   }
   if (is.na(end_raw) || !nzchar(as.character(end_raw))) {
-    end_raw <- Sys.time()
+    end_dt <- Sys.time()
+  } else {
+    end_dt <- as.POSIXct(end_raw, tz = "UTC")
   }
-  bl_format_api_time(as.POSIXct(end_raw, tz = "UTC"))
+  list(
+    start = as.Date(start_dt),
+    end = as.Date(end_dt),
+    start_api = bl_format_api_time(start_dt),
+    end_api = bl_format_api_time(end_dt)
+  )
+}
+
+bl_site_api_start <- function(site, sensors) {
+  bl_site_date_range(site, sensors)$start_api
+}
+
+bl_site_api_end <- function(site, sensors) {
+  bl_site_date_range(site, sensors)$end_api
+}
+
+bl_site_organisation_name <- function(
+    site = NULL,
+    sensors_path = "data/raw/listSensors.json"
+) {
+  if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
+    bl_load_env()
+  }
+  site <- site %||% bl_env("BL_SITE_CODE")
+  if (!nzchar(site)) {
+    stop("Set BL_SITE_CODE in .env", call. = FALSE)
+  }
+  sensors <- bl_read_sensors_json(sensors_path)
+  row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
+  if (!nrow(row)) {
+    stop("Site not found in sensor list: ", site, call. = FALSE)
+  }
+  trimws(as.character(row$OrganisationName[1]))
 }
 
 bl_bind_site_readings <- function(parts) {

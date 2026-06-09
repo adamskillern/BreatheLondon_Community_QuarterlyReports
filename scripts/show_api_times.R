@@ -11,9 +11,12 @@ source("R/bl_api.R", local = TRUE)
 bl_load_env()
 
 report_q <- bl_last_completed_quarter()
-cat("Report quarter: Q", report_q$quarter, " ", report_q$year, "\n", sep = "")
-cat("  all data fetch:  ", format(report_q$fetch_start), " to ", format(report_q$fetch_end), "\n", sep = "")
-cat("  quarter overlay: ", format(report_q$start), " to ", format(report_q$end), "\n\n", sep = "")
+fetch <- bl_resolve_site_fetch_window()
+cat("Site: ", fetch$site_code, "\n", sep = "")
+cat("All data to date: ", format(fetch$start), " to ", format(fetch$end), "\n", sep = "")
+cat("Report quarter: Q", report_q$quarter, " ", report_q$year,
+    " (", format(report_q$start), " to ", format(report_q$end), ")\n", sep = "")
+cat("\n")
 
 cat("Sent to API:\n")
 cat("  start:", bl_resolve_fetch_start(), "\n")
