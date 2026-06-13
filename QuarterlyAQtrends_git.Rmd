@@ -4,8 +4,11 @@ knit: (function(inputFile, ...) { output_dir <- file.path("output", "Test report
 output: pdf_document
 colorlinks: true
 header-includes:
+  - \usepackage[T1]{fontenc}
   - \usepackage{helvet}
+  - \usepackage{sansmath}
   - \renewcommand{\familydefault}{\sfdefault}
+  - \AtBeginDocument{\sansmath}
   - \usepackage{xcolor}
   - \definecolor{blurl}{HTML}{0000CD}
   - \definecolor{blgrey}{HTML}{888888}
@@ -15,7 +18,7 @@ header-includes:
   - \definecolor{blpm25totalborder}{HTML}{676767}
   - \definecolor{blpm25quarterborder}{HTML}{B0B0C0}
   - \setlength{\fboxsep}{10pt}
-  - \setlength{\fboxrule}{2pt}
+  - \setlength{\fboxrule}{3pt}
   - \AtBeginDocument{\hypersetup{urlcolor=blurl, linkcolor=blurl}}
   - \makeatletter
   - \newcommand{\blpageonefooter}{}
@@ -74,9 +77,9 @@ report_title <- sprintf(
 plot_legend_labels <- c("All data to date", quarter_label)
 
 quarter_trend_texts <- c(
-  "(Q1) Jan-March: In this quarter we may see higher NO$_2$ levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.",
+  "(Q1) Jan-March: In this quarter we may see higher NO\\textsubscript{2} levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.",
   "(Q2) April-June: We may continue to see some particulate episodes in April as the farming fertiliser season continues and we have high pressure systems creating stagnant conditions. May and June are generally low pollution months.",
-  "(Q3) July-Sept: The summer months are when we are likely to see ozone episodes. Ozone is not emitted but rather formed in the atmosphere from other pollutants in the heat of the sun. Generally, ozone (O$_3$) builds through the day peaking between 4-8 PM.",
+  "(Q3) July-Sept: The summer months are when we are likely to see ozone episodes. Ozone is not emitted but rather formed in the atmosphere from other pollutants in the heat of the sun. Generally, ozone (O\\textsubscript{3}) builds through the day peaking between 4-8 PM.",
   "(Q4) Oct-Dec: Autumn is typically a season of lower pollution, with the wind and rain helping to keep pollution low. As we get into December though we do sometimes see winter smogs on cold, clear, crisp mornings where pollution from traffic and heating is trapped near the ground."
 )
 
@@ -90,6 +93,7 @@ bl_format_quarter_line <- function(q, text) {
 
 WHO_NO2_DAILY <- 25
 WHO_PM25_DAILY <- 15
+BL_SPIKE_COOCCURRENCE_QUANTILE <- 0.75
 
 bl_typical_peak_methodology_text <- paste(
   "Typical peak time ranges are based on the day(s) with the highest peak hourly average (within 2\\% of the maximum). The reported range spans up to five contiguous hours centred on the peak hour and includes neighbouring hours with average values at or above 92\\% of the peak."
@@ -235,7 +239,7 @@ bl_annual_exceedance_year_lines <- function(stats) {
     return(NULL)
   }
   sprintf(
-    "%d %s (%s)",
+    "%d → %s (%s)",
     by_year$year,
     vapply(by_year$exceed_days, bl_format_exceedance_days, character(1)),
     vapply(by_year$exceed_pct, bl_format_latex_pct, character(1))
@@ -291,8 +295,8 @@ bl_emit_annual_exceedance_sub_bullets <- function(stats, period_label) {
 bl_pollutant_latex <- function(pollutant_md) {
   switch(
     pollutant_md,
-    "NO~2~" = "NO$_2$",
-    "PM~2.5~" = "PM$_{2.5}$",
+    "NO~2~" = "NO\\textsubscript{2}",
+    "PM~2.5~" = "PM\\textsubscript{2.5}",
     pollutant_md
   )
 }
@@ -566,7 +570,8 @@ bl_emit_summary_box <- function(
     border_color = "blno2quarterborder",
     peak_bullets = NULL,
     marylebone_selection = NULL,
-    marylebone_footnote_mark = NULL
+    marylebone_footnote_mark = NULL,
+    last_bullet = NULL
 ) {
   exceed <- bl_md_to_latex_inline(
     bl_format_who_exceedance(
@@ -598,9 +603,112 @@ bl_emit_summary_box <- function(
   if (!is.null(marylebone_text)) {
     cat("\\item ", marylebone_text, "\n", sep = "")
   }
+  if (!is.null(last_bullet)) {
+    cat("\\item ", last_bullet, "\n", sep = "")
+  }
   cat("\\end{itemize}\n")
   cat("}\n")
   cat("\\end{minipage}}\n\\vspace{1\\baselineskip}\n\n")
+}
+
+bl_prepare_no2_pm25_pair <- function(no2_df, pm25_df, quarter_start, quarter_end) {
+  no2 <- no2_df %>%
+    mutate(
+      datetime = lubridate::ymd_hms(sub("\\..*", "", date), quiet = TRUE),
+      no2 = as.numeric(no2)
+    ) %>%
+    filter(!is.na(datetime), !is.na(no2)) %>%
+    transmute(datetime, no2)
+
+  pm25 <- pm25_df %>%
+    mutate(
+      datetime = lubridate::ymd_hms(sub("\\..*", "", date), quiet = TRUE),
+      pm25 = as.numeric(pm25)
+    ) %>%
+    filter(!is.na(datetime), !is.na(pm25)) %>%
+    transmute(datetime, pm25)
+
+  inner_join(no2, pm25, by = "datetime") %>%
+    filter(between(as.Date(datetime), quarter_start, quarter_end))
+}
+
+bl_spike_cooccurrence_metrics <- function(pair_df, quantile = 0.75, min_paired_hours = 20L) {
+  if (!nrow(pair_df) || nrow(pair_df) < min_paired_hours) {
+    return(NULL)
+  }
+
+  no2_threshold <- stats::quantile(pair_df$no2, quantile, na.rm = TRUE)
+  pm25_threshold <- stats::quantile(pair_df$pm25, quantile, na.rm = TRUE)
+
+  flagged <- pair_df %>%
+    mutate(
+      no2_spike = no2 >= no2_threshold,
+      pm25_spike = pm25 >= pm25_threshold
+    )
+  n_no2_spike <- sum(flagged$no2_spike)
+  n_pm25_spike <- sum(flagged$pm25_spike)
+  n_both_spike <- sum(flagged$no2_spike & flagged$pm25_spike)
+  n_all_spike <- sum(flagged$no2_spike | flagged$pm25_spike)
+
+  if (n_all_spike == 0L) {
+    return(NULL)
+  }
+
+  list(
+    n_paired_hours = nrow(pair_df),
+    n_no2_spike = n_no2_spike,
+    n_pm25_spike = n_pm25_spike,
+    n_both_spike = n_both_spike,
+    n_all_spike = n_all_spike,
+    pct_both_of_all_spikes = 100 * n_both_spike / n_all_spike,
+    quantile = quantile
+  )
+}
+
+bl_format_spike_cooccurrence_bullet <- function(metrics, quarter_label, footnote_mark = NULL) {
+  if (is.null(metrics)) {
+    return(NULL)
+  }
+
+  no2_pol <- bl_pollutant_latex("NO~2~")
+  pm25_pol <- bl_pollutant_latex("PM~2.5~")
+
+  text <- sprintf(
+    paste0(
+      "In %s, air pollutant spikes were defined as the highest hourly concentrations. ",
+      "%s and %s spiked simultaneously during %d hour%s, accounting for %s of all spike hours."
+    ),
+    quarter_label,
+    no2_pol,
+    pm25_pol,
+    metrics$n_both_spike,
+    if (metrics$n_both_spike == 1L) "" else "s",
+    bl_format_latex_pct(metrics$pct_both_of_all_spikes)
+  )
+
+  if (is.null(footnote_mark)) {
+    return(text)
+  }
+  sprintf("%s%s", text, footnote_mark)
+}
+
+bl_spike_cooccurrence_footnote_mark <- function(marylebone_footnote_count) {
+  sprintf("\\textsuperscript{%d}", marylebone_footnote_count + 2L)
+}
+
+bl_spike_cooccurrence_methodology_text <- function(quantile = BL_SPIKE_COOCCURRENCE_QUANTILE) {
+  top_pct <- sprintf("%d\\%%", as.integer(100 * (1 - quantile)))
+  paste(
+    sprintf(
+      paste0(
+        "Air pollutant spikes are the highest %s of hourly concentrations for each pollutant ",
+        "at this sensor within the report quarter, using paired measurements at the same timestamp. ",
+        "The percentage reported is simultaneous spike hours as a share of all hours where either ",
+        "NO\\textsubscript{2} or PM\\textsubscript{2.5} spiked."
+      ),
+      top_pct
+    )
+  )
 }
 
 no2_quarter_stats <- bl_pollutant_summary(NO2_DATA_FRAME, "no2", WHO_NO2_DAILY, quarter_start, quarter_end)
@@ -613,6 +721,13 @@ pm25_total_stats <- bl_to_date_pollutant_summary(
 )
 no2_peak_periods <- bl_summarise_pollutant_peaks(NO2_DATA_FRAME, "no2")
 pm25_peak_periods <- bl_summarise_pollutant_peaks(PM25_DATA_FRAME, "pm25")
+
+no2_pm25_pair <- bl_prepare_no2_pm25_pair(
+  NO2_DATA_FRAME, PM25_DATA_FRAME, quarter_start, quarter_end
+)
+spike_cooccurrence <- bl_spike_cooccurrence_metrics(
+  no2_pm25_pair, quantile = BL_SPIKE_COOCCURRENCE_QUANTILE
+)
 
 # Marylebone Road (MY1) reference — loads data/processed/marylebone.RData when present
 # (no openair call). If missing, fetches once, saves RData, then reuses for later reports.
@@ -632,6 +747,18 @@ marylebone_footnote_bundle <- bl_collect_marylebone_footnotes(marylebone_footnot
 marylebone_footnotes <- marylebone_footnote_bundle$footnotes
 no2_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["NO~2~"]]
 pm25_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["PM~2.5~"]]
+
+spike_cooccurrence_footnote_mark <- if (!is.null(spike_cooccurrence)) {
+  bl_spike_cooccurrence_footnote_mark(length(marylebone_footnotes))
+} else {
+  NULL
+}
+spike_cooccurrence_bullet <- bl_format_spike_cooccurrence_bullet(
+  spike_cooccurrence, quarter_label, spike_cooccurrence_footnote_mark
+)
+spike_cooccurrence_methodology_text <- bl_spike_cooccurrence_methodology_text(
+  BL_SPIKE_COOCCURRENCE_QUANTILE
+)
 
 report_date <- format(Sys.Date(), "%d %b %Y")
 ```
@@ -871,7 +998,7 @@ PM2.5_plot_weekends_df <- rbind(PM2.5_weekends_means_all, PM2.5_weekends_means_q
 
 ## Average NO~2~ each hour at Breathe London node
 
-```{r, out.width='\\textwidth', fig.width = 10, fig.height = 3, fig.align='center', fig.show='hold'}
+```{r, out.width='\\textwidth', fig.width = 10, fig.height = 4, fig.align='center', fig.show='hold'}
 NO2_plot <- ggplot(NO2_plot_df)+
   geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
   theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
@@ -911,7 +1038,8 @@ bl_emit_summary_box(
   border_color = "blno2quarterborder",
   peak_bullets = no2_peak_periods,
   marylebone_selection = no2_marylebone_narrative,
-  marylebone_footnote_mark = no2_marylebone_footnote_mark
+  marylebone_footnote_mark = no2_marylebone_footnote_mark,
+  last_bullet = spike_cooccurrence_bullet
 )
 ```
 
@@ -998,6 +1126,9 @@ cat("\\noindent{\\fontsize{0.8em}{0.8em}\\selectfont\n")
 cat("\\textsuperscript{1} ", bl_typical_peak_methodology_text, "\n\n", sep = "")
 for (footnote in marylebone_footnotes) {
   cat(footnote$mark, " ", footnote$text, "\n\n", sep = "")
+}
+if (!is.null(spike_cooccurrence_footnote_mark)) {
+  cat(spike_cooccurrence_footnote_mark, " ", spike_cooccurrence_methodology_text, "\n\n", sep = "")
 }
 cat(
   "To download the data that was used to generate this report, visit ",
