@@ -1,0 +1,4 @@
+{
+  "r.rmarkdown.knit.useBackgroundProcess": true,
+  "r.rmarkdown.knit.defaults.knitWorkingDirectory": "document directory"
+}

@@ -49,7 +49,7 @@ From the project root in a terminal:
 Rscript scripts/fetch_readings.R
 
 # 2. Ensure .env has BL_DATA_SOURCE=csv, then knit
-Rscript -e 'rmarkdown::render("QuarterlyAQtrends_git.Rmd")'
+Rscript scripts/render_quarterly_report.R
 ```
 
 ### Option B — API direct (no CSV step)
@@ -57,10 +57,74 @@ Rscript -e 'rmarkdown::render("QuarterlyAQtrends_git.Rmd")'
 In `.env` set `BL_DATA_SOURCE=api`, then:
 
 ```bash
-Rscript -e 'rmarkdown::render("QuarterlyAQtrends_git.Rmd")'
+Rscript scripts/render_quarterly_report.R
 ```
 
 The `.Rmd` calls the API during knit (slower; needs network and key).
+
+### Summary-of-data-to-date logic
+
+The **Summary of data to date** boxes only use measurements through the **end of the report quarter** (not the latest fetched row). This keeps the quarterly report internally consistent.
+
+The annual exceedance breakdown in those boxes follows these rules:
+
+| Report quarter | Report year in annual breakdown |
+|----------------|----------------------------------|
+| **Q1** | Omitted — that quarter already has its own summary box |
+| **Q2–Q4** | Included — counts exceedances from 1 Jan through the end of the report quarter |
+
+Prior calendar years always show the full year (within the available measurement period).
+
+Each year line in the annual breakdown is formatted as `2022 122 days (43.7%)`. The day count is the number of exceedance days in that year. The percentage is the **share of all days with data in that calendar year** that exceeded the WHO daily mean guideline (exceedance days ÷ total days × 100, rounded to one decimal place). These percentages are independent per year and do not sum to 100% across years.
+
+### Marylebone Road comparison paragraphs
+
+Each pollutant **Summary of Q1** (etc.) bordered box may include a final bullet comparing the community node with **Marylebone Road (AURN MY1)**. The “Summary of data to date” boxes do not include this text.
+
+**Reference data loading (RData first — no API when cached):**
+
+If `data/processed/marylebone.RData` exists (or the path in `BL_MARYLEBONE_RDATA`), the report **loads that file and does not call openair**. The file must contain an object named `marylebone` with hourly `date`, `no2`, and `pm2.5` columns.
+
+When the RData file is **missing**, the first report knit fetches MY1 via `openair::importUKAQ()` and **automatically saves** `data/processed/marylebone.RData`. Later reports (including mass generation across many sites) reuse the cache and do not call openair again.
+
+```bash
+# Optional: refresh the cache manually (delete the RData file first, or overwrite)
+source("scripts/analysis_BL.R")
+marylebone <- get_marylebone_openair()
+save(marylebone, file = "data/processed/marylebone.RData")
+```
+
+**Which narrative (A, B, or C) is shown?** Evaluated **independently** per pollutant (both may be C, or A for NO₂ and B for PM₂.₅, etc.):
+
+| Option | Period | ±25% gate? |
+|--------|--------|------------|
+| **A** | Whole-week morning rush (07:00–10:00) | Yes — community mean within 75–125% of MY1 |
+| **B** | Whole-week afternoons (12:00–18:00), spike days in top 25% | Yes — same gate on spike-day means |
+| **C** | Weekday school pick-up (15:00–16:30) | **No** — catch-all when neither A nor B qualifies |
+
+If A or B passes the gate, the one with the **higher cumulative load** (sum of hourly community concentrations in that window over the report quarter) is used. If neither passes, **C** is shown.
+
+Each comparative bullet carries a superscript footnote (numbered after the typical-peak footnote) explaining how that pollutant’s paragraph was calculated for the selected option.
+
+Preview selection for the current site and quarter:
+
+```bash
+Rscript scripts/test_marylebone_narrative.R
+```
+
+### Report output location
+
+Knitted PDFs are written to `output/Test reports/` with a timestamp in the filename, e.g. `QuarterlyAQtrends_20250612_143052.pdf`.
+
+This is configured in the `knit:` field at the top of `QuarterlyAQtrends_git.Rmd`. Always knit from the **project root** (the folder containing `R/bl_api.R`).
+
+| How you knit | Output path |
+|--------------|-------------|
+| **RStudio** — Knit button (Ctrl/Cmd+Shift+K) | `output/Test reports/QuarterlyAQtrends_YYYYMMDD_HHMMSS.pdf` |
+| **VS Code** — Knit button | Same as RStudio, if **smart knitting** is enabled (`r.rmarkdown.knit.useBackgroundProcess: true` in `.vscode/settings.json`) |
+| **Terminal / VS Code task** — `Rscript scripts/render_quarterly_report.R` | Same as above |
+
+**Note:** Running `rmarkdown::render("QuarterlyAQtrends_git.Rmd")` directly in the R console does **not** use the custom output path and will write `QuarterlyAQtrends_git.pdf` next to the `.Rmd`. Use the Knit button or `scripts/render_quarterly_report.R` instead.
 
 ## Editor tasks (optional)
 
@@ -71,7 +135,7 @@ Editors that support [VS Code tasks](https://code.visualstudio.com/docs/editor/t
 | Fetch sensor list | `Rscript scripts/fetch_sensors.R` |
 | Fetch readings | `Rscript scripts/fetch_readings.R` |
 | Generate PM2.5 all-sites plot | `Rscript scripts/generate_plots.R` |
-| Knit quarterly report (PDF) | `Rscript -e 'rmarkdown::render("QuarterlyAQtrends_git.Rmd")'` |
+| Knit quarterly report (PDF) | `Rscript scripts/render_quarterly_report.R` |
 
 These match the terminal commands above; use whichever workflow you prefer.
 

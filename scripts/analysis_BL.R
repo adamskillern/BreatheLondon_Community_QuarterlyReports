@@ -56,5 +56,11 @@ get_marylebone_openair <- function(
   data
 }
 
-# Marylebone Road reference site — AURN kerbside monitor on Marylebone Rd
-# marylebone <- get_marylebone_openair()
+# Marylebone Road reference site — AURN kerbside monitor on Marylebone Rd.
+# Quarterly reports auto-cache MY1: if data/processed/marylebone.RData is missing,
+# the first knit fetches via openair and saves it; later knits load RData only.
+# To refresh manually:
+#   marylebone <- get_marylebone_openair()
+#   save(marylebone, file = "data/processed/marylebone.RData")
+
+

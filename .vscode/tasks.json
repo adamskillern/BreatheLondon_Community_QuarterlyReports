@@ -25,7 +25,7 @@
     {
       "label": "Breathe: Knit quarterly report (PDF)",
       "type": "shell",
-      "command": "Rscript -e \"rmarkdown::render('QuarterlyAQtrends_git.Rmd')\"",
+      "command": "Rscript scripts/render_quarterly_report.R",
       "options": { "cwd": "${workspaceFolder}" },
       "group": { "kind": "build", "isDefault": true }
     }
