@@ -279,7 +279,7 @@ bl_emit_annual_exceedance_sub_bullets <- function(stats, period_label) {
   if (is.null(year_lines)) {
     return(invisible(NULL))
   }
-  cat("\\par The annual break down was:\\par\n")
+  cat("\\par The annual breakdown was:\\par\n")
   cat("\\begingroup\\setlength{\\parindent}{0pt}\\setlength{\\parskip}{2pt}\n")
   for (line in year_lines) {
     cat(
@@ -633,27 +633,38 @@ bl_prepare_no2_pm25_pair <- function(no2_df, pm25_df, quarter_start, quarter_end
 }
 
 bl_spike_cooccurrence_metrics <- function(pair_df, quantile = 0.75, min_paired_hours = 20L) {
+  # Check if the data frame is empty or does not have enough paired hours
   if (!nrow(pair_df) || nrow(pair_df) < min_paired_hours) {
     return(NULL)
   }
 
+  # Calculate the threshold for NO2 and PM2.5 based on the specified quantile
   no2_threshold <- stats::quantile(pair_df$no2, quantile, na.rm = TRUE)
   pm25_threshold <- stats::quantile(pair_df$pm25, quantile, na.rm = TRUE)
 
+  # Flag spikes for NO2 and PM2.5
   flagged <- pair_df %>%
     mutate(
+      # Flag NO2 and PM2.5 spikes as TRUE if the concentration is greater than the threshold
       no2_spike = no2 >= no2_threshold,
       pm25_spike = pm25 >= pm25_threshold
     )
+
+  # Count the number of NO2 spikes
   n_no2_spike <- sum(flagged$no2_spike)
+  # Count the number of PM2.5 spikes
   n_pm25_spike <- sum(flagged$pm25_spike)
+  # Count the number of times both spiked together
   n_both_spike <- sum(flagged$no2_spike & flagged$pm25_spike)
+  # Count the number of times either spiked (union)
   n_all_spike <- sum(flagged$no2_spike | flagged$pm25_spike)
 
+  # Return NULL if there are no spikes at all
   if (n_all_spike == 0L) {
     return(NULL)
   }
 
+  # Return the results as a list
   list(
     n_paired_hours = nrow(pair_df),
     n_no2_spike = n_no2_spike,
@@ -675,14 +686,14 @@ bl_format_spike_cooccurrence_bullet <- function(metrics, quarter_label, footnote
 
   text <- sprintf(
     paste0(
-      "In %s, air pollutant spikes were defined as the highest hourly concentrations. ",
-      "%s and %s spiked simultaneously during %d hour%s, accounting for %s of all spike hours."
+      "In %s, there were %d hour%s where the highest concentration spikes in ",
+      "%s and %s happened at the same time, accounting for %s of all concentration spikes."
     ),
     quarter_label,
-    no2_pol,
-    pm25_pol,
     metrics$n_both_spike,
     if (metrics$n_both_spike == 1L) "" else "s",
+    no2_pol,
+    pm25_pol,
     bl_format_latex_pct(metrics$pct_both_of_all_spikes)
   )
 
