@@ -93,7 +93,10 @@ bl_normalize_marylebone_df <- function(df) {
     out$pm25 <- as.numeric(out[["pm2.5"]])
   }
   if ("no2" %in% names(out)) {
-    out$no2 <- as.numeric(out$no2)
+    out <- bl_clean_pollutant_values(out, "no2")
+  }
+  if ("pm25" %in% names(out)) {
+    out <- bl_clean_pollutant_values(out, "pm25")
   }
   out
 }

@@ -1,6 +1,8 @@
 ---
 title: "Breathe London Community Programme"
-knit: (function(inputFile, ...) { output_dir <- file.path("output", "Test reports"); dir.create(output_dir, recursive = TRUE, showWarnings = FALSE); rmarkdown::render(inputFile, output_dir = output_dir, output_file = sprintf("QuarterlyAQtrends_%s.pdf", format(Sys.time(), "%Y%m%d_%H%M%S"))) })
+knit: (function(inputFile, ...) { source("scripts/knit_quarterly_report.R"); knit_quarterly_report(inputFile, ...) })
+params:
+  site_code: ""
 output: pdf_document
 colorlinks: true
 header-includes:
@@ -10,18 +12,22 @@ header-includes:
   - \renewcommand{\familydefault}{\sfdefault}
   - \AtBeginDocument{\sansmath}
   - \usepackage{xcolor}
+  - \usepackage{graphicx}
+  - \usepackage{tikz}
+  - \usepackage{anyfontsize}
   - \definecolor{blurl}{HTML}{0000CD}
   - \definecolor{blgrey}{HTML}{888888}
   - \definecolor{blorg}{HTML}{0000CD}
-  - \definecolor{blno2totalborder}{HTML}{A21A73}
-  - \definecolor{blno2quarterborder}{HTML}{C17EB9}
-  - \definecolor{blpm25totalborder}{HTML}{676767}
+  - \definecolor{blno2totalborder}{HTML}{7e0052}
+  - \definecolor{blno2quarterborder}{HTML}{eea7e6}
+  - \definecolor{blpm25totalborder}{HTML}{000000}
   - \definecolor{blpm25quarterborder}{HTML}{B0B0C0}
   - \setlength{\fboxsep}{10pt}
   - \setlength{\fboxrule}{3pt}
   - \AtBeginDocument{\hypersetup{urlcolor=blurl, linkcolor=blurl}}
   - \makeatletter
   - \newcommand{\blpageonefooter}{}
+  - \input{R/bl_title_banner.tex}
   - \def\ps@blfirstpage{\def\@oddfoot{\blpageonefooter}\let\@evenfoot\@oddfoot\def\@oddhead{}\let\@evenhead\@oddhead}
   - \makeatother
   - \renewcommand{\maketitle}{}
@@ -35,7 +41,14 @@ if (!file.exists("R/bl_api.R")) {
 }
 source("R/bl_api.R")
 source("R/bl_marylebone.R")
+source("R/bl_report_map.R")
 bl_load_env()
+
+site_code <- params$site_code
+if (is.null(site_code) || !nzchar(site_code)) {
+  site_code <- bl_resolve_report_site_codes()[1]
+}
+bl_use_site_code(site_code)
 
 packages <- c(
   "dplyr", "ggplot2", "cowplot", "tidyr", "lubridate"
@@ -43,14 +56,12 @@ packages <- c(
 invisible(lapply(packages, require, character.only = TRUE))
 
 # BL_DATA_SOURCE=csv (default) or api — see .env.example
-report_data <- bl_load_report_data()
-NO2_DATA_FRAME <- report_data$no2 #%>%
-  # mutate(no2 = na_if(no2, 0))
-PM25_DATA_FRAME <- report_data$pm25 #%>%
-  # mutate(pm25 = na_if(pm25, 0))
+report_data <- bl_load_report_data(site_code = site_code)
+NO2_DATA_FRAME <- report_data$no2
+PM25_DATA_FRAME <- report_data$pm25
 
-report_dates <- bl_env_report_dates()
-organisation_name <- bl_site_organisation_name()
+report_dates <- bl_env_report_dates(site_code = site_code)
+organisation_name <- bl_site_organisation_name(site = site_code)
 quarter_start <- report_dates$quarter_start
 quarter_end <- report_dates$quarter_end
 measurement_start <- report_dates$fetch_start
@@ -67,9 +78,10 @@ summary_to_date_heading <- sprintf(
     format(measurement_start, "%Y")
   )
 )
-report_title <- sprintf(
-  "Quarter %d: Air Quality Trends Report \n\n%s to %s %s",
-  report_quarter,
+report_title_line1 <- sprintf("Quarter %d", report_quarter)
+report_title_line2 <- "Air Quality Trends Report"
+report_title_line3 <- sprintf(
+  "%s to %s %s",
   sprintf("%d %s", lubridate::day(quarter_start), format(quarter_start, "%B")),
   sprintf("%d %s", lubridate::day(quarter_end), format(quarter_end, "%B")),
   report_year
@@ -94,6 +106,7 @@ bl_format_quarter_line <- function(q, text) {
 WHO_NO2_DAILY <- 25
 WHO_PM25_DAILY <- 15
 BL_SPIKE_COOCCURRENCE_QUANTILE <- 0.75
+BL_REPORT_ROUND_DIGITS <- 0L
 
 bl_typical_peak_methodology_text <- paste(
   "Typical peak time ranges are based on the day(s) with the highest peak hourly average (within 2\\% of the maximum). The reported range spans up to five contiguous hours centred on the peak hour and includes neighbouring hours with average values at or above 92\\% of the peak."
@@ -120,7 +133,10 @@ bl_pollutant_summary <- function(df, value_col, threshold, start_date = NULL, en
 
   daily <- period_df %>%
     group_by(day) %>%
-    summarise(daily_mean = mean(.data[[value_col]], na.rm = TRUE), .groups = "drop")
+    summarise(
+      daily_mean = round(mean(.data[[value_col]], na.rm = TRUE), BL_REPORT_ROUND_DIGITS),
+      .groups = "drop"
+    )
 
   if (!length(values)) {
     return(list(
@@ -150,7 +166,7 @@ bl_pollutant_summary <- function(df, value_col, threshold, start_date = NULL, en
   list(
     exceed_days = sum(daily$daily_mean > threshold, na.rm = TRUE),
     exceed_days_by_year = exceed_days_by_year,
-    mean = mean(values),
+    mean = round(mean(values), BL_REPORT_ROUND_DIGITS),
     min = min(values),
     max = max(values)
   )
@@ -164,7 +180,7 @@ bl_add_annual_exceedance_year_pct <- function(by_year) {
   }
   by_year$exceed_pct <- ifelse(
     by_year$total_days > 0L,
-    round(100 * by_year$exceed_days / by_year$total_days, 1),
+    round(100 * by_year$exceed_days / by_year$total_days, BL_REPORT_ROUND_DIGITS),
     0
   )
   by_year
@@ -200,8 +216,8 @@ bl_format_exceedance_days <- function(n) {
   sprintf("%d %s", n, word)
 }
 
-# Format rounded numbers for display only; strip trailing zeros (10.0 → 10).
-bl_format_decimal <- function(x, digits = 1) {
+# Format rounded numbers for display; strip trailing zeros (10.0 → 10).
+bl_format_decimal <- function(x, digits = BL_REPORT_ROUND_DIGITS) {
   if (length(x) != 1L) {
     return(vapply(x, bl_format_decimal, character(1), digits = digits))
   }
@@ -213,9 +229,14 @@ bl_format_decimal <- function(x, digits = 1) {
   sub("\\.$", "", s)
 }
 
+# All pollutant concentrations (µg/m³) in the report use whole numbers.
+bl_format_concentration <- function(x) {
+  bl_format_decimal(x, digits = BL_REPORT_ROUND_DIGITS)
+}
+
 bl_format_latex_pct <- function(pct) {
   # LaTeX treats % as a comment; emit \% in the PDF output.
-  paste0(bl_format_decimal(pct, digits = 1), "\\%")
+  paste0(bl_format_decimal(pct, digits = BL_REPORT_ROUND_DIGITS), "\\%")
 }
 
 bl_format_concentration_stats <- function(stats, period_label) {
@@ -227,9 +248,9 @@ bl_format_concentration_stats <- function(stats, period_label) {
   }
   sprintf(
     "The average concentration was %s µg/m³; the minimum was %s µg/m³; and the maximum was %s µg/m³",
-    bl_format_decimal(stats$mean),
-    bl_format_decimal(stats$min),
-    bl_format_decimal(stats$max)
+    bl_format_concentration(stats$mean),
+    bl_format_concentration(stats$min),
+    bl_format_concentration(stats$max)
   )
 }
 
@@ -244,6 +265,93 @@ bl_annual_exceedance_year_lines <- function(stats) {
     vapply(by_year$exceed_days, bl_format_exceedance_days, character(1)),
     vapply(by_year$exceed_pct, bl_format_latex_pct, character(1))
   )
+}
+
+bl_plot_annual_exceedance_bars <- function(stats, fill_color) {
+  by_year <- stats$exceed_days_by_year
+  if (is.null(by_year) || !nrow(by_year)) {
+    return(NULL)
+  }
+
+  bar_half <- 0.45
+  label_size <- 12
+  days_label_size <- 6
+  year_label_size <- 24
+  grid_breaks <- c(25, 50, 75)
+
+  plot_df <- by_year %>%
+    mutate(
+      year = factor(as.character(year), levels = as.character(year)),
+      exceed_pct = as.numeric(exceed_pct),
+      days_label = vapply(exceed_days, bl_format_exceedance_days, character(1)),
+      pct_label = paste0(exceed_pct, "%")
+    )
+
+  ggplot(plot_df, aes(x = year)) +
+    geom_rect(
+      aes(
+        xmin = as.numeric(year) - bar_half,
+        xmax = as.numeric(year) + bar_half,
+        ymin = exceed_pct,
+        ymax = 100
+      ),
+      fill = "grey90",
+      colour = NA
+    ) +
+    geom_hline(yintercept = grid_breaks, colour = "white", linewidth = 1.1) +
+    geom_rect(
+      aes(
+        xmin = as.numeric(year) - bar_half,
+        xmax = as.numeric(year) + bar_half,
+        ymin = 0,
+        ymax = exceed_pct
+      ),
+      fill = fill_color,
+      colour = NA
+    ) +
+    geom_text(
+      aes(x = year, y = exceed_pct, label = pct_label),
+      vjust = -0.12,
+      colour = fill_color,
+      fontface = "bold",
+      size = label_size
+    ) +
+    geom_text(
+      aes(x = year, y = 100, label = days_label),
+      vjust = -0.35,
+      size = days_label_size
+    ) +
+    annotate(
+      "text",
+      x = 1 - bar_half - 0.12,
+      y = grid_breaks,
+      label = c("25%", "50%", "75%"),
+      hjust = 1,
+      colour = "grey65",
+      size = 7
+    ) +
+    scale_y_continuous(
+      expand = expansion(mult = c(0, 0.12)),
+      limits = c(0, 100),
+      breaks = grid_breaks,
+      labels = NULL
+    ) +
+    scale_x_discrete(expand = expansion(add = c(1.1, 1.1))) +
+    coord_cartesian(clip = "off") +
+    labs(x = NULL, y = NULL) +
+    theme_minimal(base_size = year_label_size) +
+    theme(
+      legend.position = "none",
+      axis.title = element_blank(),
+      axis.text.x = element_text(colour = "black", size = year_label_size),
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      axis.ticks.x = element_blank(),
+      axis.line.x = element_blank(),
+      panel.grid = element_blank(),
+      panel.background = element_blank(),
+      plot.margin = margin(10, 2, 5, 2)
+    )
 }
 
 bl_format_who_exceedance <- function(stats, pollutant_md, threshold, period_label) {
@@ -309,8 +417,8 @@ bl_format_marylebone_paragraph <- function(
     return(NULL)
   }
   pol <- bl_pollutant_latex(pollutant_md)
-  x <- bl_format_decimal(selection$headline_community)
-  y <- bl_format_decimal(selection$headline_marylebone)
+  x <- bl_format_concentration(selection$headline_community)
+  y <- bl_format_concentration(selection$headline_marylebone)
 
   text <- switch(
     selection$option,
@@ -470,7 +578,7 @@ bl_summarise_record_peak <- function(period_df, value_col, weekdays_filter) {
 
   sprintf(
     "%s µg/m³ on %s, %d %s %s at %s",
-    bl_format_decimal(peak_val),
+    bl_format_concentration(peak_val),
     day_name,
     lubridate::day(peak_day),
     format(peak_day, "%B"),
@@ -772,6 +880,20 @@ spike_cooccurrence_methodology_text <- bl_spike_cooccurrence_methodology_text(
 )
 
 report_date <- format(Sys.Date(), "%d %b %Y")
+lungs_banner_path <- "figure/lungs_blue.png"
+if (!file.exists(lungs_banner_path)) {
+  stop("Title banner image not found: ", lungs_banner_path, call. = FALSE)
+}
+```
+
+
+```{r first-page-banner, echo=FALSE, results='asis'}
+cat("\\thispagestyle{blfirstpage}\n")
+cat(sprintf("\\renewcommand{\\blpageonetitlelineone}{%s}\n", report_title_line1))
+cat(sprintf("\\renewcommand{\\blpageonetitlelinetwo}{%s}\n", report_title_line2))
+cat(sprintf("\\renewcommand{\\blpageonetitlelinethree}{%s}\n", report_title_line3))
+cat("\\blpageonebanner\n")
+cat("\\vspace*{\\dimexpr\\blbannerreserve+\\blbannerpadding\\relax}\n")
 ```
 
 ```{r first-page-footer, echo=FALSE, results='asis'}
@@ -787,219 +909,77 @@ cat(sprintf(
   ),
   report_date
 ))
-cat("\n\\thispagestyle{blfirstpage}\n")
 ```
 
 ```{r org-heading, echo=FALSE, results='asis'}
 cat(sprintf(
-  "\\begin{center}\n{\\Large\\bfseries\\textcolor{blorg}{To the members of %s}\\par}\n\\end{center}\n",
+  paste0(
+    "\\begingroup\\centering\n",
+    "\\fontsize{28}{32}\\selectfont\\bfseries\\textcolor{blorg}{To the members of %s}\\par\n",
+    "\\endgroup\n"
+  ),
   organisation_name
 ))
 ```
 
-\vspace{1\baselineskip}
+\vspace{2.5\baselineskip}
 
-```{r report-title, echo=FALSE, results='asis'}
-title_tex <- gsub("\n\n", "\\\\[0.5em]\n", report_title, fixed = TRUE)
-cat(sprintf(
-  "\\begin{center}\n{\\huge\\bfseries %s\\par}\n\\end{center}\n",
-  title_tex
-))
+```{r sensor-location-map, echo=FALSE, fig.align='center', out.width='\\textwidth'}
+sensor_map_path <- bl_render_site_location_map(
+  site = site_code,
+  icon_png = "figure/Sensor-blue-V1-removebg.png",
+  icon_scale = 0.24
+)
+knitr::include_graphics(sensor_map_path)
 ```
-
-\raggedright
-
-\vspace{3\baselineskip}
-
-## General Air Pollution Trends in London
-
-```{r quarter-trends, echo=FALSE, results='asis'}
-for (q in seq_along(quarter_trend_texts)) {
-  cat(bl_format_quarter_line(q, quarter_trend_texts[q]), "\n\n")
-}
-```
-
 
 ```{r, echo=FALSE}
-# Clean raw data for graphing — filter by weekdays vs weekends for both pollutants
+# Strip sub-second precision, tag day-of-week, split date/time, and format hour as HH:MM
+parse_hourly <- function(df) {
+  df$date    <- gsub("\\..*", "", df$date)
+  df$weekday <- lubridate::wday(lubridate::ymd_hms(df$date))
+  df         <- df %>% dplyr::mutate(time = sub("^\\S+\\s+", "", date))
+  df         <- separate(df, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
+  df$Date2   <- as.Date(df$Date2)
+  df$time2   <- NULL
+  df <- within(df, {
+    posb  <- as.POSIXlt(time, format = "%H:%M:%S")
+    hours <- posb$hour
+    time  <- format(posb, "%H:%M")
+    posb  <- NULL
+  })
+  pad      <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(df$hours))
+  df$hours <- format(strptime(paste0(pad, df$hours), format = "%M%H"), format = "%H:%M")
+  df
+}
 
-NO2_raw <- NO2_DATA_FRAME
-NO2_raw$date <- gsub("\\..*","",NO2_raw$date)
+# Compute diurnal means for all data and the current quarter, labelled for the plot legend
+hourly_means_df <- function(df, value_col, quarter_label) {
+  mean_fn <- function(x) round(mean(x, na.rm = TRUE), BL_REPORT_ROUND_DIGITS)
+  means_all <- df %>% group_by(hours) %>% summarise_at(value_col, list(mean = mean_fn))
+  means_quarter <- df %>%
+    filter(between(Date2, quarter_start, quarter_end)) %>%
+    group_by(hours) %>% summarise_at(value_col, list(mean = mean_fn))
+  means_all$name     <- "All data to date"
+  means_quarter$name <- quarter_label
+  rbind(means_all, means_quarter)
+}
 
-NO2_raw$weekday <- lubridate::wday(lubridate::ymd_hms(NO2_raw$date))
+# Parse dates and tag weekday number for both pollutants
+NO2_parsed  <- parse_hourly(NO2_DATA_FRAME)
+PM25_parsed <- parse_hourly(PM25_DATA_FRAME)
 
-NO2_weekdays <- NO2_raw %>% filter(
-  weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
-)
+# Split each pollutant into weekday (Mon–Fri) and weekend (Sat–Sun) subsets
+NO2_weekdays  <- NO2_parsed  %>% filter(weekday %in% 2:6)
+NO2_weekends  <- NO2_parsed  %>% filter(weekday %in% c(1, 7))
+PM25_weekdays <- PM25_parsed %>% filter(weekday %in% 2:6)
+PM25_weekends <- PM25_parsed %>% filter(weekday %in% c(1, 7))
 
-NO2_weekends <- NO2_raw %>% filter(
-  weekday == 7 | weekday == 1
-)
-
-#PM2.5 
-
-PM2.5_raw <- PM25_DATA_FRAME
-PM2.5_raw$date <- gsub("\\..*","",PM2.5_raw$date)
-
-PM2.5_raw$weekday <- lubridate::wday(lubridate::ymd_hms(PM2.5_raw$date))
-
-PM2.5_weekdays <- PM2.5_raw %>% filter(
-  weekday == 2 | weekday == 3 | weekday == 4 | weekday == 5 | weekday == 6
-)
-
-PM2.5_weekends <- PM2.5_raw %>% filter(
-  weekday == 7 | weekday == 1
-)
-
-#Calculate hourly means by weekday
-#NO2
-
-NO2_weekdays <- NO2_weekdays %>%
-  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
-
-NO2_weekdays <- separate(NO2_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
-NO2_weekdays <- subset(NO2_weekdays, select = -c(time2))
-NO2_weekdays$Date2 <- as.Date(NO2_weekdays$Date2)
-
-NO2_weekdays <- within(NO2_weekdays,{
-  posb <- as.POSIXlt(time,format="%H:%M:%S")
-  hours <- posb$hour
-  mins <- posb$min
-  time <- format(posb, "%H:%M")
-  posb <- NULL  # cleanup
-})
-
-hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(NO2_weekdays$hours))
-hours <- paste0(hours2, NO2_weekdays$hours)
-hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
-NO2_weekdays$hours <- hours
-
-NO2_weekdays_quarter <- NO2_weekdays %>% filter(between(Date2, quarter_start, quarter_end))
-
-NO2_weekdays_means_quarter <- NO2_weekdays_quarter %>% group_by(hours) %>%                        
-  summarise_at(vars(no2),
-               list(mean = mean)) 
-
-NO2_weekdays_means_all <- NO2_weekdays %>% group_by(hours) %>%                        
-  summarise_at(vars(no2),
-               list(mean = mean)) 
-
-#PM2.5
-
-PM2.5_weekdays <- PM2.5_weekdays %>%
-  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
-
-PM2.5_weekdays <- separate(PM2.5_weekdays, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
-PM2.5_weekdays <- subset(PM2.5_weekdays, select = -c(time2))
-PM2.5_weekdays$Date2 <- as.Date(PM2.5_weekdays$Date2)
-
-PM2.5_weekdays <- within(PM2.5_weekdays,{
-  posb <- as.POSIXlt(time,format="%H:%M:%S")
-  hours <- posb$hour
-  mins <- posb$min
-  time <- format(posb, "%H:%M")
-  posb <- NULL  # cleanup
-})
-
-hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(PM2.5_weekdays$hours))
-hours <- paste0(hours2, PM2.5_weekdays$hours)
-hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
-PM2.5_weekdays$hours <- hours
-
-PM2.5_weekdays_quarter <- PM2.5_weekdays %>% filter(between(Date2, quarter_start, quarter_end))
-
-PM2.5_weekdays_means_quarter <- PM2.5_weekdays_quarter %>% group_by(hours) %>%                        
-  summarise_at(vars(pm25),
-               list(mean = mean))
-
-PM2.5_weekdays_means_all <- PM2.5_weekdays %>% group_by(hours) %>%                        
-  summarise_at(vars(pm25),
-               list(mean = mean))
-
-# Generate plot data frames — weekdays
-
-NO2_weekdays_means_all$name <- "All data to date"
-NO2_weekdays_means_quarter$name <- quarter_label
-NO2_plot_df <- rbind(NO2_weekdays_means_all, NO2_weekdays_means_quarter)
-
-PM2.5_weekdays_means_all$name <- "All data to date"
-PM2.5_weekdays_means_quarter$name <- quarter_label
-PM2.5_plot_df <- rbind(PM2.5_weekdays_means_all, PM2.5_weekdays_means_quarter)
-
-# Calculate hourly means by weekend day
-# NO2
-
-NO2_weekends <- NO2_weekends %>%
-  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
-
-NO2_weekends <- separate(NO2_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
-NO2_weekends <- subset(NO2_weekends, select = -c(time2))
-NO2_weekends$Date2 <- as.Date(NO2_weekends$Date2)
-
-NO2_weekends <- within(NO2_weekends,{
-  posb <- as.POSIXlt(time,format="%H:%M:%S")
-  hours <- posb$hour
-  mins <- posb$min
-  time <- format(posb, "%H:%M")
-  posb <- NULL  # cleanup
-})
-
-hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(NO2_weekends$hours))
-hours <- paste0(hours2, NO2_weekends$hours)
-hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
-NO2_weekends$hours <- hours
-
-NO2_weekends_quarter <- NO2_weekends %>% filter(between(Date2, quarter_start, quarter_end))
-
-NO2_weekends_means_quarter <- NO2_weekends_quarter %>% group_by(hours) %>%                        
-  summarise_at(vars(no2),
-               list(mean = mean)) 
-
-NO2_weekends_means_all <- NO2_weekends %>% group_by(hours) %>%                        
-  summarise_at(vars(no2),
-               list(mean = mean)) 
-
-# PM2.5
-
-PM2.5_weekends <- PM2.5_weekends %>%
-  dplyr::mutate(time = sub("^\\S+\\s+", "", date))
-
-PM2.5_weekends <- separate(PM2.5_weekends, date, into = c("Date2", "time2"), sep = "^\\S*\\K\\s+")
-PM2.5_weekends <- subset(PM2.5_weekends, select = -c(time2))
-PM2.5_weekends$Date2 <- as.Date(PM2.5_weekends$Date2)
-
-PM2.5_weekends <- within(PM2.5_weekends,{
-  posb <- as.POSIXlt(time,format="%H:%M:%S")
-  hours <- posb$hour
-  mins <- posb$min
-  time <- format(posb, "%H:%M")
-  posb <- NULL  # cleanup
-})
-
-hours2 <- mapply(function(x, y) paste0(rep(x, y), collapse = ""), 0, 4 - nchar(PM2.5_weekends$hours))
-hours <- paste0(hours2, PM2.5_weekends$hours)
-hours <- format(strptime(hours, format="%M%H"), format = "%H:%M")
-PM2.5_weekends$hours <- hours
-
-PM2.5_weekends_quarter <- PM2.5_weekends %>% filter(between(Date2, quarter_start, quarter_end))
-
-PM2.5_weekends_means_quarter <- PM2.5_weekends_quarter %>% group_by(hours) %>%                        
-  summarise_at(vars(pm25),
-               list(mean = mean))
-
-PM2.5_weekends_means_all <- PM2.5_weekends %>% group_by(hours) %>%                        
-  summarise_at(vars(pm25),
-               list(mean = mean))
-
-# Generate plot data frames — weekends
-
-NO2_weekends_means_all$name <- "All data to date"
-NO2_weekends_means_quarter$name <- quarter_label
-NO2_plot_weekends_df <- rbind(NO2_weekends_means_all, NO2_weekends_means_quarter)
-
-PM2.5_weekends_means_all$name <- "All data to date"
-PM2.5_weekends_means_quarter$name <- quarter_label
-PM2.5_plot_weekends_df <- rbind(PM2.5_weekends_means_all, PM2.5_weekends_means_quarter)
+# Build plot data frames: all-data hourly mean + quarter hourly mean, for each group
+NO2_plot_df            <- hourly_means_df(NO2_weekdays,  "no2",  quarter_label)
+PM2.5_plot_df          <- hourly_means_df(PM25_weekdays, "pm25", quarter_label)
+NO2_plot_weekends_df   <- hourly_means_df(NO2_weekends,  "no2",  quarter_label)
+PM2.5_plot_weekends_df <- hourly_means_df(PM25_weekends, "pm25", quarter_label)
 
 ```
 
@@ -1020,7 +1000,7 @@ NO2_plot <- ggplot(NO2_plot_df)+
   annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#A21A73", "#C17EB9"), name = "Data range", labels = plot_legend_labels) +
+  scale_fill_manual(values=c("#7e0052", "#eea7e6"), name = "Data range", labels = plot_legend_labels) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
 NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
@@ -1033,7 +1013,7 @@ NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
   annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#A21A73", "#C17EB9"), name = "Data range", labels = plot_legend_labels) +
+  scale_fill_manual(values=c("#7e0052", "#eea7e6"), name = "Data range", labels = plot_legend_labels) +
    theme(plot.title = element_text(hjust = 0.5))
 
 plot_grid(NO2_plot, NO2_plot_weekend, align = "h", ncol = 2, rel_widths = c(1/4, 1/3))
@@ -1052,6 +1032,17 @@ bl_emit_summary_box(
   marylebone_footnote_mark = no2_marylebone_footnote_mark,
   last_bullet = spike_cooccurrence_bullet
 )
+```
+
+\newpage
+
+## Annual NO~2~ exceedances at the Breathe London node
+
+```{r no2-total-annual-bars, out.width='\\textwidth', fig.width = 10, fig.height = 3, fig.align='center', echo=FALSE}
+no2_annual_bar_plot <- bl_plot_annual_exceedance_bars(no2_total_stats, "#7e0052")
+if (!is.null(no2_annual_bar_plot)) {
+  print(no2_annual_bar_plot)
+}
 ```
 
 ```{r no2-total-summary, echo=FALSE, results='asis'}
@@ -1082,7 +1073,7 @@ PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df)+
   annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("#676767", "#B0B0C0"), name = "Data range", labels = plot_legend_labels) +
+  scale_fill_manual(values=c("black", "#B0B0C0"), name = "Data range", labels = plot_legend_labels) +
   theme(legend.position="none", plot.title = element_text(hjust = 0.5))
 
 PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
@@ -1095,7 +1086,7 @@ PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
   annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
   geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
   annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("#505050", "#a09fab"), name = "Data range", labels = plot_legend_labels)+
+  scale_fill_manual(values=c("black", "#a09fab"), name = "Data range", labels = plot_legend_labels)+
    theme(plot.title = element_text(hjust = 0.5))
 
 plot_grid(PM2.5_plot_weekdays, PM2.5_plot_weekends, align = "h", ncol = 2, rel_widths = c(1/4, 1/3)) 
@@ -1103,6 +1094,10 @@ plot_grid(PM2.5_plot_weekdays, PM2.5_plot_weekends, align = "h", ncol = 2, rel_w
 # new: #676767
 # old #808080
 # old light color: #B0B0C0
+
+# no2 new q1: #C17EB9
+# no2 new all: #A21A73
+
 
 ```
 
@@ -1120,6 +1115,17 @@ bl_emit_summary_box(
 )
 ```
 
+\newpage
+
+## Annual PM~2.5~ exceedances at the Breathe London node
+
+```{r pm25-total-annual-bars, out.width='\\textwidth', fig.width = 10, fig.height = 3, fig.align='center', echo=FALSE}
+pm25_annual_bar_plot <- bl_plot_annual_exceedance_bars(pm25_total_stats, "black")
+if (!is.null(pm25_annual_bar_plot)) {
+  print(pm25_annual_bar_plot)
+}
+```
+
 ```{r pm25-total-summary, echo=FALSE, results='asis'}
 bl_emit_summary_box(
   summary_to_date_heading,
@@ -1132,7 +1138,13 @@ bl_emit_summary_box(
 ```
 
 ```{r report-footer, echo=FALSE, results='asis'}
-cat("\\newpage\n\\thispagestyle{plain}\n\\null\\vfill\n")
+cat("\\newpage\n\\thispagestyle{plain}\n\\raggedright\n")
+cat("\\noindent{\\large\\bfseries General Air Pollution Trends in London\\par}\n")
+cat("\\vspace{0.5\\baselineskip}\n")
+for (q in seq_along(quarter_trend_texts)) {
+  cat(bl_format_quarter_line(q, quarter_trend_texts[q]), "\n\n")
+}
+cat("\\vfill\n")
 cat("\\noindent{\\fontsize{0.8em}{0.8em}\\selectfont\n")
 cat("\\textsuperscript{1} ", bl_typical_peak_methodology_text, "\n\n", sep = "")
 for (footnote in marylebone_footnotes) {

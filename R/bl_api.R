@@ -101,6 +101,53 @@ bl_load_env <- function(path = ".env") {
   invisible(TRUE)
 }
 
+# --- Report site codes (comma-separated list or single BL_SITE_CODE) ---
+bl_parse_site_code_list <- function(x) {
+  parts <- trimws(unlist(strsplit(as.character(x), ",", fixed = TRUE)))
+  parts <- parts[nzchar(parts)]
+  if (!length(parts)) {
+    stop("No site codes in list.", call. = FALSE)
+  }
+  unique(parts)
+}
+
+bl_resolve_report_site_codes <- function() {
+  if (!length(ls(envir = .bl_env_expanded))) {
+    bl_load_env()
+  }
+  codes <- bl_env("BL_REPORT_SITE_CODES", "")
+  if (nzchar(codes)) {
+    return(bl_parse_site_code_list(codes))
+  }
+  single <- bl_env("BL_SITE_CODE", "")
+  if (nzchar(single)) {
+    return(single)
+  }
+  stop("Set BL_REPORT_SITE_CODES or BL_SITE_CODE in .env", call. = FALSE)
+}
+
+bl_use_site_code <- function(site_code) {
+  if (is.null(site_code) || !nzchar(site_code)) {
+    stop("site_code is empty", call. = FALSE)
+  }
+  assign("BL_SITE_CODE", site_code, envir = .bl_env_expanded)
+  Sys.setenv(BL_SITE_CODE = site_code)
+  invisible(site_code)
+}
+
+bl_report_csv_paths <- function(site_code = NULL) {
+  site_code <- site_code %||% bl_env("BL_SITE_CODE")
+  no2_site <- file.path("data/processed", paste0("no2_", site_code, ".csv"))
+  pm25_site <- file.path("data/processed", paste0("pm25_", site_code, ".csv"))
+  if (file.exists(no2_site) && file.exists(pm25_site)) {
+    return(list(no2 = no2_site, pm25 = pm25_site))
+  }
+  list(
+    no2 = bl_env("BL_NO2_CSV", "data/processed/no2.csv"),
+    pm25 = bl_env("BL_PM25_CSV", "data/processed/pm25.csv")
+  )
+}
+
 # --- API key and base URL ---
 bl_api_key <- function() {
   # Returns your BREATHE_API_KEY from the environment (required on every API request).
@@ -282,11 +329,11 @@ bl_resolve_fetch_end <- function(site_code = NULL, sensors_path = "data/raw/list
 }
 
 # --- Quarterly report quarter boundaries (always last completed calendar quarter) ---
-bl_env_report_dates <- function(ref = Sys.Date()) {
+bl_env_report_dates <- function(ref = Sys.Date(), site_code = NULL) {
   # Used by QuarterlyAQtrends_git.Rmd for bar-chart filters and headings.
   # All fetched rows = "All data to date"; quarter_start → quarter_end = last quarter overlay.
   report_q <- bl_last_completed_quarter(ref)
-  fetch <- bl_resolve_site_fetch_window()
+  fetch <- bl_resolve_site_fetch_window(site_code)
   list(
     report_year = as.character(report_q$year),
     report_quarter = report_q$quarter,
@@ -295,6 +342,17 @@ bl_env_report_dates <- function(ref = Sys.Date()) {
     fetch_start = fetch$start,
     fetch_end = fetch$end
   )
+}
+
+# --- Round pollutant values and treat zero as missing (invalid sensor reading) ---
+bl_clean_pollutant_values <- function(df, value_col) {
+  if (!value_col %in% names(df) || !nrow(df)) {
+    return(df)
+  }
+  vals <- round(as.numeric(df[[value_col]]), digits = 0)
+  vals[vals == 0] <- NA_real_
+  df[[value_col]] <- vals
+  df
 }
 
 # --- Slim getClarityData records to date + pollutant column ---
@@ -327,7 +385,7 @@ bl_clarity_to_df <- function(records, value_col) {
     stringsAsFactors = FALSE
   )
   names(out)[2] <- value_col
-  out
+  bl_clean_pollutant_values(out, value_col)
 }
 
 # --- Per-site API window from listSensors metadata ---
@@ -393,6 +451,30 @@ bl_site_organisation_name <- function(
     stop("Site not found in sensor list: ", site, call. = FALSE)
   }
   trimws(as.character(row$OrganisationName[1]))
+}
+
+bl_site_location <- function(
+    site = NULL,
+    sensors_path = "data/raw/listSensors.json"
+) {
+  if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
+    bl_load_env()
+  }
+  site <- site %||% bl_env("BL_SITE_CODE")
+  if (!nzchar(site)) {
+    stop("Set BL_SITE_CODE in .env", call. = FALSE)
+  }
+  sensors <- bl_read_sensors_json(sensors_path)
+  row <- sensors[sensors$SiteCode == site, , drop = FALSE][1, , drop = FALSE]
+  if (!nrow(row)) {
+    stop("Site not found in sensor list: ", site, call. = FALSE)
+  }
+  list(
+    site_code = site,
+    site_name = trimws(as.character(row$SiteName[1])),
+    latitude = as.numeric(row$Latitude[1]),
+    longitude = as.numeric(row$Longitude[1])
+  )
 }
 
 bl_bind_site_readings <- function(parts) {
@@ -537,22 +619,24 @@ bl_fetch_readings <- function(
 }
 
 # --- Load report data from CSV or live API ---
-bl_load_report_data <- function(source = NULL) {
+bl_load_report_data <- function(source = NULL, site_code = NULL) {
   # Supplies NO2 + PM2.5 data.frames to QuarterlyAQtrends_git.Rmd (CSV or live API).
   # Controlled by BL_DATA_SOURCE: "csv" reads files; "api" calls bl_fetch_readings().
   bl_load_env()
+  site_code <- site_code %||% bl_env("BL_SITE_CODE")
   source <- tolower(source %||% bl_env("BL_DATA_SOURCE", "csv"))
 
   if (identical(source, "api")) {
-    return(bl_fetch_readings())
+    return(bl_fetch_readings(site_code = site_code))
   }
 
   if (!identical(source, "csv")) {
     stop('BL_DATA_SOURCE must be "csv" or "api".', call. = FALSE)
   }
 
-  no2_path <- bl_env("BL_NO2_CSV", "data/processed/no2.csv")
-  pm25_path <- bl_env("BL_PM25_CSV", "data/processed/pm25.csv")
+  paths <- bl_report_csv_paths(site_code)
+  no2_path <- paths$no2
+  pm25_path <- paths$pm25
 
   if (!file.exists(no2_path)) {
     stop("NO2 CSV not found: ", no2_path, call. = FALSE)
@@ -574,6 +658,9 @@ bl_load_report_data <- function(source = NULL) {
     pm25 <- pm25 %>%
       dplyr::rename(date = Category, pm25 = `PM<sub>2.5</sub> particulates`)
   }
+
+  no2 <- bl_clean_pollutant_values(no2, "no2")
+  pm25 <- bl_clean_pollutant_values(pm25, "pm25")
 
   list(no2 = no2, pm25 = pm25)
 }
