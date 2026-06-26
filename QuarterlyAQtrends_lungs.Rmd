@@ -42,6 +42,7 @@ if (!file.exists("R/bl_api.R")) {
 source("R/bl_api.R")
 source("R/bl_marylebone.R")
 source("R/bl_report_map.R")
+source("R/bl_lung_exceedance_plot.R")
 bl_load_env()
 
 site_code <- params$site_code
@@ -1042,17 +1043,6 @@ bl_emit_summary_box(
 )
 ```
 
-\newpage
-
-## Annual WHO NO~2~ exceedances at the Breathe London node
-
-```{r no2-total-annual-bars, out.width='\\textwidth', fig.width = 10, fig.height = 3, fig.align='center', echo=FALSE}
-no2_annual_bar_plot <- bl_plot_annual_exceedance_bars(no2_total_stats, "#7e0052")
-if (!is.null(no2_annual_bar_plot)) {
-  print(no2_annual_bar_plot)
-}
-```
-
 ```{r no2-total-summary, echo=FALSE, results='asis'}
 bl_emit_summary_box(
   summary_to_date_heading,
@@ -1123,17 +1113,6 @@ bl_emit_summary_box(
 )
 ```
 
-\newpage
-
-## Annual WHO PM~2.5~ exceedances at the Breathe London node
-
-```{r pm25-total-annual-bars, out.width='\\textwidth', fig.width = 10, fig.height = 3, fig.align='center', echo=FALSE}
-pm25_annual_bar_plot <- bl_plot_annual_exceedance_bars(pm25_total_stats, "black")
-if (!is.null(pm25_annual_bar_plot)) {
-  print(pm25_annual_bar_plot)
-}
-```
-
 ```{r pm25-total-summary, echo=FALSE, results='asis'}
 bl_emit_summary_box(
   summary_to_date_heading,
@@ -1145,14 +1124,44 @@ bl_emit_summary_box(
 )
 ```
 
+\newpage
+
+# Annual WHO Exceedance
+
+Each year the community node measured pollution is represented by a pair of lungs. The left lung represents NO~2~ and the right PM~2.5~, with the fill level indicating the percentage of days that exceeded the WHO daily guideline. The number above each lung is the count of exceedance days that year.
+
+```{r lung-annual-exceedance, out.width='\\textwidth', fig.width = 11, fig.height = 4.5, fig.align='center', echo=FALSE}
+# Lungs-report label sizes (defaults unchanged in bl_plot_lung_exceedance() elsewhere).
+lungs_text_sizes <- bl_lung_plot_text_sizes(
+  year = 20,
+  pct = 10,
+  days = 5,
+  pollutant = 6
+)
+
+lung_exceedance_plot <- bl_plot_lung_exceedance(
+  no2_total_stats,
+  pm25_total_stats,
+  no2_color = "#7e0052",
+  pm25_color = "black",
+  text_sizes = lungs_text_sizes,
+  plot_subtitle = "Lung fill height = % of days exceeding the WHO daily mean; label above = exceedance day count"
+)
+if (!is.null(lung_exceedance_plot)) {
+  print(lung_exceedance_plot)
+}
+```
+
+**What is air pollution and where does it come from?**
+
+Air Pollution includes any gases or particles in the air that can harm our health. In London, we focus on monitoring three main types of pollution:
+
+Nitrogen dioxide (NO~2~) - This is a gas produced by burning fossil fuels. In London, the biggest source of NO~2~ is road transport at around 45%, followed by industrial and commercial heating at around 20% ([Source: LAEI, 2023](https://data.london.gov.uk/download/e758q/06aab8a6-79a6-40ae-8038-8303ac82a3aa/LAEI%202019%20Summary%20Note.pdf)). Exposure to NO~2~ has been associated with a range of health effects including organ development during pregnancy, new onset asthma in children and lung function decline in older adults.
+
+Fine particles (PM~2.5~) - Fine particles, also known as PM~2.5~ (Particulate Matter 2.5 microns in diameter) come from a wide range of sources. In London, the greatest contributors include road transport (30%) followed by domestic wood burning at 17% and commercial cooking at 15% ([Source: LAEI, 2023](https://data.london.gov.uk/download/e758q/06aab8a6-79a6-40ae-8038-8303ac82a3aa/LAEI%202019%20Summary%20Note.pdf)). Their small size means they can enter the bloodstream and have serious health effects including increasing risk of lung cancer, heart disease, asthma, and low birth weight.
+
 ```{r report-footer, echo=FALSE, results='asis'}
 cat("\\newpage\n\\thispagestyle{plain}\n\\raggedright\n")
-cat("\\noindent{\\large\\bfseries What is air pollution and where does it come from?\\par}\n")
-cat("\\vspace{0.5\\baselineskip}\n")
-cat("Air Pollution includes any gases or particles in the air that can harm our health. In London, we focus on monitoring three main types of pollution:\n\n")
-cat("Nitrogen dioxide (NO\\textsubscript{2}) - This is a gas produced by burning fossil fuels. In London, the biggest source of NO\\textsubscript{2} is road transport at around 45\\%, followed by industrial and commercial heating at around 20\\% (\\href{https://data.london.gov.uk/download/e758q/06aab8a6-79a6-40ae-8038-8303ac82a3aa/LAEI\\%202019\\%20Summary\\%20Note.pdf}{Source: LAEI, 2023}). Exposure to NO\\textsubscript{2} has been associated with a range of health effects including organ development during pregnancy, new onset asthma in children and lung function decline in older adults.\n\n")
-cat("Fine particles (PM\\textsubscript{2.5}) - Fine particles, also known as PM\\textsubscript{2.5} (Particulate Matter 2.5 microns in diameter) come from a wide range of sources. In London, the greatest contributors include road transport (30\\%) followed by domestic wood burning at 17\\% and commercial cooking at 15\\% (\\href{https://data.london.gov.uk/download/e758q/06aab8a6-79a6-40ae-8038-8303ac82a3aa/LAEI\\%202019\\%20Summary\\%20Note.pdf}{Source: LAEI, 2023}). Their small size means they can enter the bloodstream and have serious health effects including increasing risk of lung cancer, heart disease, asthma, and low birth weight.\n\n")
-cat("\\vspace{1\\baselineskip}\n")
 cat("\\noindent{\\large\\bfseries General Air Pollution Trends in London\\par}\n")
 cat("\\vspace{0.5\\baselineskip}\n")
 for (q in seq_along(quarter_trend_texts)) {

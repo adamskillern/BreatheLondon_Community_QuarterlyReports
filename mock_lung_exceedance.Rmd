@@ -1,0 +1,98 @@
+---
+title: "Mock — lung exceedance plot"
+output:
+  html_document:
+    toc: false
+    df_print: paged
+params:
+  site_code: ""
+---
+
+Experimental plot: simple lung outlines filled like the annual exceedance bar charts.
+
+- **Left lung** — NO~2~ exceedance (% of days + day count), colour `#7e0052`
+- **Right lung** — PM~2.5~ exceedance (% of days + day count), black fill
+- One lung pair **per calendar year** (same data as the Summary-of-data-to-date bar charts)
+
+This file is separate from `QuarterlyAQtrends_git.Rmd` — tweak here before moving anything into the main report.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+
+if (!file.exists("R/bl_api.R")) {
+  stop("Knit from the project root (folder containing R/bl_api.R).")
+}
+
+source("R/bl_api.R")
+source("R/bl_report_stats.R")
+source("R/bl_lung_exceedance_plot.R")
+bl_load_env()
+
+suppressPackageStartupMessages({
+  library(dplyr)
+  library(ggplot2)
+})
+
+site_code <- params$site_code
+if (is.null(site_code) || !nzchar(site_code)) {
+  site_code <- bl_resolve_report_site_codes()[1]
+}
+bl_use_site_code(site_code)
+
+WHO_NO2_DAILY <- 25
+WHO_PM25_DAILY <- 15
+
+report_data <- bl_load_report_data(site_code = site_code)
+report_dates <- bl_env_report_dates(site_code = site_code)
+
+no2_total_stats <- bl_to_date_pollutant_summary(
+  report_data$no2, "no2", WHO_NO2_DAILY,
+  report_dates$quarter_end, report_dates$report_year, report_dates$report_quarter
+)
+pm25_total_stats <- bl_to_date_pollutant_summary(
+  report_data$pm25, "pm25", WHO_PM25_DAILY,
+  report_dates$quarter_end, report_dates$report_year, report_dates$report_quarter
+)
+```
+
+## Site: `r site_code`
+
+```{r lung-plot, fig.width=11, fig.height=4.5, fig.align='center'}
+lung_plot <- bl_plot_lung_exceedance(
+  no2_total_stats,
+  pm25_total_stats,
+  site_code = site_code
+)
+
+if (is.null(lung_plot)) {
+  knitr::knit_exit("No annual exceedance data available for lung plot.")
+}
+
+print(lung_plot)
+```
+
+## Underlying data
+
+```{r data-table}
+bl_lung_exceedance_year_df(no2_total_stats, pm25_total_stats)
+```
+
+## Compare with bar charts (simple columns — full bars are in the main report)
+
+```{r bar-no2, fig.width=7, fig.height=3, fig.align='center'}
+plot_df <- no2_total_stats$exceed_days_by_year
+ggplot(plot_df, aes(x = factor(year), y = exceed_pct)) +
+  geom_col(fill = "#7e0052", width = 0.6) +
+  geom_text(aes(label = paste0(exceed_pct, "%")), vjust = -0.3, size = 3.5) +
+  labs(title = "NO2 exceedance % (reference)", x = NULL, y = "% days") +
+  theme_minimal()
+```
+
+```{r bar-pm25, fig.width=7, fig.height=3, fig.align='center'}
+plot_df <- pm25_total_stats$exceed_days_by_year
+ggplot(plot_df, aes(x = factor(year), y = exceed_pct)) +
+  geom_col(fill = "black", width = 0.6) +
+  geom_text(aes(label = paste0(exceed_pct, "%")), vjust = -0.3, size = 3.5) +
+  labs(title = "PM2.5 exceedance % (reference)", x = NULL, y = "% days") +
+  theme_minimal()
+```

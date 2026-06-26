@@ -9,6 +9,14 @@ BL_MARYLEBONE_WINDOW_A <- c(7L, 10L)   # morning rush 07:00–10:00
 BL_MARYLEBONE_WINDOW_B <- c(12L, 18L)  # afternoon 12:00–18:00
 BL_MARYLEBONE_WINDOW_C <- c(15L, 16L)  # school pick-up 15:00–16:30 (hours 15–16)
 
+# Full-day spike periods (6 h each, all days) — tried after A/B fail, before C.
+BL_MARYLEBONE_DAY_SPIKE_PERIODS <- list(
+  morning = list(hours = c(6L, 11L), label = "mornings", window = "06:00–11:59"),
+  afternoon = list(hours = c(12L, 17L), label = "afternoons", window = "12:00–17:59"),
+  evening = list(hours = c(18L, 23L), label = "evenings", window = "18:00–23:59"),
+  overnight = list(hours = c(0L, 5L), label = "overnights", window = "00:00–05:59")
+)
+
 bl_format_marylebone_hour_range <- function(hour_range) {
   sprintf(
     "%02d:00–%02d:00",
@@ -49,6 +57,18 @@ bl_format_marylebone_footnote <- function(
       selection$n_spike_days,
       if (identical(selection$n_spike_days, 1L)) "" else "s"
     ),
+    SPIKE = sprintf(
+      paste0(
+        "%s during %s: mean paired hourly values for %s (%s) on the %d day%s ",
+        "in the top 25\\%% by community mean during that period, all days of the week."
+      ),
+      pollutant_label,
+      quarter_label,
+      selection$period_label,
+      selection$window_label,
+      selection$n_spike_days,
+      if (identical(selection$n_spike_days, 1L)) "" else "s"
+    ),
     C = sprintf(
       paste0(
         "%s during %s: mean paired weekday hourly values (community sensor vs Marylebone Road) ",
@@ -83,7 +103,7 @@ bl_parse_community_datetime <- function(df, value_col) {
     )
 }
 
-bl_normalize_marylebone_df <- function(df) {
+bl_normalize_marylebone_df <- function(df, clean = TRUE) {
   out <- as.data.frame(df)
   if (!"date" %in% names(out)) {
     stop("Marylebone data must include a date column.", call. = FALSE)
@@ -92,11 +112,13 @@ bl_normalize_marylebone_df <- function(df) {
   if ("pm2.5" %in% names(out) && !"pm25" %in% names(out)) {
     out$pm25 <- as.numeric(out[["pm2.5"]])
   }
-  if ("no2" %in% names(out)) {
-    out <- bl_clean_pollutant_values(out, "no2")
-  }
-  if ("pm25" %in% names(out)) {
-    out <- bl_clean_pollutant_values(out, "pm25")
+  if (clean) {
+    if ("no2" %in% names(out)) {
+      out <- bl_clean_pollutant_values(out, "no2")
+    }
+    if ("pm25" %in% names(out)) {
+      out <- bl_clean_pollutant_values(out, "pm25")
+    }
   }
   out
 }
@@ -107,7 +129,8 @@ bl_normalize_marylebone_df <- function(df) {
 # save as marylebone.RData, then use that cache for all later reports (mass runs).
 bl_load_marylebone_hourly <- function(
     rdata_path = NULL,
-    json_path = "data/raw/listSensors.json") {
+    json_path = "data/raw/listSensors.json",
+    clean = TRUE) {
   if (!exists("bl_env", mode = "function")) {
     stop("Source R/bl_api.R before R/bl_marylebone.R", call. = FALSE)
   }
@@ -126,7 +149,7 @@ bl_load_marylebone_hourly <- function(
     message(
       "Marylebone reference: loaded from RData (no API call): ", rdata_path
     )
-    return(bl_normalize_marylebone_df(env$marylebone))
+    return(bl_normalize_marylebone_df(env$marylebone, clean = clean))
   }
 
   message(
@@ -140,7 +163,7 @@ bl_load_marylebone_hourly <- function(
   }
   save(marylebone, file = rdata_path)
   message("Marylebone reference: saved cache to ", rdata_path)
-  bl_normalize_marylebone_df(marylebone)
+  bl_normalize_marylebone_df(marylebone, clean = clean)
 }
 
 bl_fetch_marylebone_openair <- function(
@@ -308,8 +331,78 @@ bl_marylebone_option_c_metrics <- function(pair_df) {
   )
 }
 
-# Per pollutant: pick A or B if either passes ±25% (highest cumulative load wins);
-# otherwise use C (catch-all, no ±25% gate). NO2 and PM2.5 are independent.
+# Spike-day metrics for one full-day period (top 25% of days by community mean in window).
+bl_marylebone_spike_period_metrics <- function(
+    pair_df,
+    hour_range,
+    period_label,
+    window_label) {
+  period_df <- bl_filter_hour_window(pair_df, hour_range)
+  if (!nrow(period_df)) {
+    return(NULL)
+  }
+
+  by_day <- period_df %>%
+    dplyr::mutate(day = as.Date(datetime)) %>%
+    dplyr::group_by(day) %>%
+    dplyr::summarise(
+      community = mean(community, na.rm = TRUE),
+      marylebone = mean(marylebone, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  if (nrow(by_day) < 2L) {
+    return(NULL)
+  }
+
+  threshold <- stats::quantile(by_day$community, probs = 0.75, na.rm = TRUE)
+  spike_days <- by_day %>% dplyr::filter(community >= threshold)
+  if (!nrow(spike_days)) {
+    return(NULL)
+  }
+
+  comm <- mean(spike_days$community, na.rm = TRUE)
+  mary <- mean(spike_days$marylebone, na.rm = TRUE)
+  list(
+    option = "SPIKE",
+    period_label = period_label,
+    window_label = window_label,
+    headline_community = comm,
+    headline_marylebone = mary,
+    cumulative_load = sum(period_df$community, na.rm = TRUE),
+    within_25pct = bl_marylebone_within_25pct(comm, mary),
+    n_spike_days = nrow(spike_days)
+  )
+}
+
+bl_marylebone_day_spike_period_metrics <- function(pair_df) {
+  lapply(BL_MARYLEBONE_DAY_SPIKE_PERIODS, function(period) {
+    bl_marylebone_spike_period_metrics(
+      pair_df,
+      period$hours,
+      period$label,
+      period$window
+    )
+  })
+}
+
+bl_marylebone_pick_best_eligible <- function(candidates) {
+  candidates <- candidates[!vapply(candidates, is.null, logical(1))]
+  candidates <- candidates[vapply(
+    candidates,
+    function(m) isTRUE(m$within_25pct),
+    logical(1)
+  )]
+  if (!length(candidates)) {
+    return(NULL)
+  }
+  loads <- vapply(candidates, function(m) m$cumulative_load, numeric(1))
+  candidates[[which.max(loads)]]
+}
+
+# Per pollutant: A or B if either passes ±25% (highest cumulative load wins);
+# else best day-period spike (morning/afternoon/evening/overnight) if any passes ±25%;
+# else C (catch-all). NO2 and PM2.5 are independent.
 bl_select_marylebone_narrative <- function(
     community_df,
     marylebone_df,
@@ -333,17 +426,15 @@ bl_select_marylebone_narrative <- function(
     C = bl_marylebone_option_c_metrics(pair_df)
   )
 
-  eligible_ab <- metrics[names(metrics) %in% c("A", "B")]
-  eligible_ab <- eligible_ab[!vapply(eligible_ab, is.null, logical(1))]
-  eligible_ab <- eligible_ab[vapply(
-    eligible_ab,
-    function(m) isTRUE(m$within_25pct),
-    logical(1)
-  )]
+  best_ab <- bl_marylebone_pick_best_eligible(metrics[c("A", "B")])
+  if (!is.null(best_ab)) {
+    return(best_ab)
+  }
 
-  if (length(eligible_ab)) {
-    loads <- vapply(eligible_ab, function(m) m$cumulative_load, numeric(1))
-    return(eligible_ab[[which.max(loads)]])
+  period_candidates <- bl_marylebone_day_spike_period_metrics(pair_df)
+  best_period <- bl_marylebone_pick_best_eligible(period_candidates)
+  if (!is.null(best_period)) {
+    return(best_period)
   }
 
   metrics$C

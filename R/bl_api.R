@@ -356,7 +356,7 @@ bl_clean_pollutant_values <- function(df, value_col) {
 }
 
 # --- Slim getClarityData records to date + pollutant column ---
-bl_clarity_to_df <- function(records, value_col) {
+bl_clarity_to_df <- function(records, value_col, clean = TRUE) {
   # Shrinks raw API rows to two columns: date and pm25 or no2 (from DateTime and ScaledValue).
   # Drops SiteCode, DurationNS, etc. — those are handled elsewhere if needed.
   if (!requireNamespace("jsonlite", quietly = TRUE)) {
@@ -385,7 +385,12 @@ bl_clarity_to_df <- function(records, value_col) {
     stringsAsFactors = FALSE
   )
   names(out)[2] <- value_col
-  bl_clean_pollutant_values(out, value_col)
+  out[[value_col]] <- as.numeric(out[[value_col]])
+  if (clean) {
+    bl_clean_pollutant_values(out, value_col)
+  } else {
+    out
+  }
 }
 
 # --- Per-site API window from listSensors metadata ---
@@ -586,7 +591,8 @@ bl_fetch_readings <- function(
     start_time = NULL,
     end_time = NULL,
     species_no2 = NULL,
-    species_pm25 = NULL
+    species_pm25 = NULL,
+    clean = TRUE
 ) {
   # Fetches one site's hourly NO2 and PM2.5 for the quarterly report time window.
   # Used by fetch_readings.R; defaults come from .env when arguments are NULL.
@@ -613,13 +619,13 @@ bl_fetch_readings <- function(
   pm25_records <- bl_get_clarity_data(site_code, species_pm25, start_time, end_time)
 
   list(
-    no2 = bl_clarity_to_df(no2_records, "no2"),
-    pm25 = bl_clarity_to_df(pm25_records, "pm25")
+    no2 = bl_clarity_to_df(no2_records, "no2", clean = clean),
+    pm25 = bl_clarity_to_df(pm25_records, "pm25", clean = clean)
   )
 }
 
 # --- Load report data from CSV or live API ---
-bl_load_report_data <- function(source = NULL, site_code = NULL) {
+bl_load_report_data <- function(source = NULL, site_code = NULL, clean = TRUE) {
   # Supplies NO2 + PM2.5 data.frames to QuarterlyAQtrends_git.Rmd (CSV or live API).
   # Controlled by BL_DATA_SOURCE: "csv" reads files; "api" calls bl_fetch_readings().
   bl_load_env()
@@ -627,7 +633,7 @@ bl_load_report_data <- function(source = NULL, site_code = NULL) {
   source <- tolower(source %||% bl_env("BL_DATA_SOURCE", "csv"))
 
   if (identical(source, "api")) {
-    return(bl_fetch_readings(site_code = site_code))
+    return(bl_fetch_readings(site_code = site_code, clean = clean))
   }
 
   if (!identical(source, "csv")) {
@@ -659,8 +665,13 @@ bl_load_report_data <- function(source = NULL, site_code = NULL) {
       dplyr::rename(date = Category, pm25 = `PM<sub>2.5</sub> particulates`)
   }
 
-  no2 <- bl_clean_pollutant_values(no2, "no2")
-  pm25 <- bl_clean_pollutant_values(pm25, "pm25")
+  if (clean) {
+    no2 <- bl_clean_pollutant_values(no2, "no2")
+    pm25 <- bl_clean_pollutant_values(pm25, "pm25")
+  } else {
+    no2$no2 <- as.numeric(no2$no2)
+    pm25$pm25 <- as.numeric(pm25$pm25)
+  }
 
   list(no2 = no2, pm25 = pm25)
 }

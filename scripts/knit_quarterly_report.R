@@ -16,8 +16,16 @@ knit_quarterly_report <- function(inputFile, ...) {
     site_code <- bl_env("BL_SITE_CODE", unset = "UNKNOWN")
   }
 
+  # Distinguish report variants by input file (e.g. the lungs report).
+  prefix <- if (grepl("lungs", basename(inputFile), ignore.case = TRUE)) {
+    "QuarterlyAQtrends_lungs"
+  } else {
+    "QuarterlyAQtrends"
+  }
+
   output_file <- sprintf(
-    "QuarterlyAQtrends_%s_%s.pdf",
+    "%s_%s_%s.pdf",
+    prefix,
     site_code,
     format(Sys.time(), "%Y%m%d_%H%M%S")
   )

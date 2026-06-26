@@ -34,6 +34,9 @@ for (pollutant in names(pollutants)) {
     cat("No narrative selected (insufficient paired data).\n")
   } else {
     cat("Option:", sel$option, "\n")
+    if (identical(sel$option, "SPIKE")) {
+      cat("Period:", sel$period_label, "(", sel$window_label, ")\n", sep = "")
+    }
     cat("Community headline:", sel$headline_community, "\n")
     cat("Marylebone headline:", sel$headline_marylebone, "\n")
     cat("Within 25%:", sel$within_25pct, "\n")

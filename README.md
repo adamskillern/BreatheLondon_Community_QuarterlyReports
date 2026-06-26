@@ -16,6 +16,45 @@ Copy [`.env.example`](.env.example) to `.env` and set:
 
 Weekday (`Wed`, `Fri`, …) is added in R when calling the API. Preview: `Rscript scripts/show_api_times.R`
 
+## Analyse data (R console)
+
+Load community node data and Marylebone Road (MY1) reference for interactive analysis with `scripts/analysis_BL.R`. Sites come from `BL_REPORT_SITE_CODES` (or `BL_SITE_CODE` if unset). Node data respects `BL_DATA_SOURCE` (`api` or `csv`).
+
+**QA default:** raw API values — no rounding, zeros kept as `0` (not `NA`). Quarterly reports still use cleaned data. Pass `bl_load_analysis_data(raw = FALSE)` for report-style cleaning. CSV files written by `fetch_readings.R` are already cleaned; use `BL_DATA_SOURCE=api` for true raw values.
+
+From anywhere (e.g. a parent folder such as `Code`):
+
+```r
+source("BreatheLondon_Community_QuarterlyReports/scripts/analysis_BL.R")
+```
+
+That gives you:
+
+| Object | What it is |
+|--------|------------|
+| `site_codes` | All sites from `BL_REPORT_SITE_CODES`, e.g. `CLDP0299`, `CLDP0470`, `CLDP0391` |
+| `site_code` | First site in that list, e.g. `CLDP0299` |
+| `no2_df` / `pm25_df` | Hourly data for `site_code` (`date` + pollutant column) |
+| `nodes` | Named list of all sites, e.g. `nodes[["CLDP0470"]]$no2` |
+| `marylebone_df` | Marylebone Road (MY1) reference (`date`, `no2`, `pm2.5`) |
+
+A typical run loads every site in `BL_REPORT_SITE_CODES` (~34k hourly rows per site for a full deployment history; Marylebone loads from `data/processed/marylebone.RData` when cached).
+
+**Other sites:**
+
+```r
+no2_df  <- nodes[["CLDP0470"]]$no2
+pm25_df <- nodes[["CLDP0470"]]$pm25
+```
+
+Or reload one site:
+
+```r
+bl_load_analysis_data("CLDP0470")
+```
+
+From the project root you can also run `Rscript scripts/analysis_BL.R` (same data load, non-interactive).
+
 ### PM2.5 multi-site plot (optional)
 
 Copy plot keys from [`.env.example`](.env.example) into `.env`:
@@ -47,20 +86,38 @@ Always run commands from the **project root** in a terminal — the folder that 
 cd /path/to/BreatheLondon_Community_QuarterlyReports
 ```
 
+### Report variants
+
+There are two full quarterly PDF reports. They share the same data, summaries, and diurnal charts; only the **annual WHO exceedance** section differs:
+
+| File | Annual exceedance visual |
+|------|---------------------------|
+| **`QuarterlyAQtrends_git.Rmd`** | Stacked **bar charts** (one per pollutant, before each “Summary of data to date” box) |
+| **`QuarterlyAQtrends_lungs.Rmd`** | **Lung plot** (left = NO₂, right = PM₂.₅, one pair per calendar year) in a single section after the PM₂.₅ summary |
+
+Plot code for the lungs variant lives in `R/bl_lung_exceedance_plot.R`.
+
 ### One sensor vs multiple sensors
 
-| Goal | How to run |
-|------|------------|
-| **One PDF** (single site) | RStudio/VS Code **Knit** button, or `Rscript scripts/render_quarterly_report.R CLDP0470` |
-| **Multiple PDFs** (one per site in `BL_REPORT_SITE_CODES`) | **Terminal only** — from the project folder run: `Rscript scripts/render_quarterly_report.R` |
+| Goal | Bar-chart report | Lungs report |
+|------|------------------|--------------|
+| **One PDF** (single site) | **Knit** `QuarterlyAQtrends_git.Rmd`, or `Rscript scripts/render_quarterly_report.R CLDP0470` | **Knit** `QuarterlyAQtrends_lungs.Rmd`, or `Rscript scripts/render_lungs_report.R CLDP0470` |
+| **Multiple PDFs** (one per site in `BL_REPORT_SITE_CODES`) | `Rscript scripts/render_quarterly_report.R` | `Rscript scripts/render_lungs_report.R` |
 
 The Knit button renders **one** report (the first site in `BL_REPORT_SITE_CODES`, or `BL_SITE_CODE` if that list is unset). To generate a separate PDF for each sensor — e.g. `CLDP0299`, `CLDP0470`, and `CLDP0391` — set `BL_REPORT_SITE_CODES` in `.env`, open a terminal in this folder, and run:
 
 ```bash
+# Bar charts (3 PDFs when BL_REPORT_SITE_CODES lists 3 sites)
 Rscript scripts/render_quarterly_report.R
+
+# Lungs plot (3 PDFs)
+Rscript scripts/render_lungs_report.R
 ```
 
-Each site gets its own file, e.g. `output/Test reports/QuarterlyAQtrends_CLDP0470_20260620_161626.pdf`.
+Each site gets its own file, e.g.:
+
+- `output/Test reports/QuarterlyAQtrends_CLDP0470_20260620_161626.pdf`
+- `output/Test reports/QuarterlyAQtrends_lungs_CLDP0470_20260620_161626.pdf`
 
 ### Option A — CSV (recommended for re-knitting)
 
@@ -70,9 +127,11 @@ Rscript scripts/fetch_readings.R
 
 # 2. Ensure .env has BL_DATA_SOURCE=csv, then render all reports
 Rscript scripts/render_quarterly_report.R
+Rscript scripts/render_lungs_report.R
 
 # Or render one site only:
 Rscript scripts/render_quarterly_report.R CLDP0470
+Rscript scripts/render_lungs_report.R CLDP0470
 ```
 
 ### Option B — API direct (no CSV step)
@@ -81,9 +140,10 @@ In `.env` set `BL_DATA_SOURCE=api`, then:
 
 ```bash
 Rscript scripts/render_quarterly_report.R
+Rscript scripts/render_lungs_report.R
 ```
 
-The `.Rmd` calls the API during knit (slower; needs network and key).
+The `.Rmd` files call the API during knit (slower; needs network and key).
 
 ### Summary-of-data-to-date logic
 
@@ -132,15 +192,35 @@ marylebone <- get_marylebone_openair()
 save(marylebone, file = "data/processed/marylebone.RData")
 ```
 
-**Which narrative (A, B, or C) is shown?** Evaluated **independently** per pollutant (both may be C, or A for NO₂ and B for PM₂.₅, etc.):
+**Which narrative is shown?** Evaluated **independently** per pollutant (NO₂ and PM₂.₅ may get different options). Selection logic in `R/bl_marylebone.R`:
+
+1. **A** or **B** — if either passes the ±25% gate, use the one with the **higher cumulative load**
+2. **Day-period spikes** — if neither A nor B qualifies, try morning / afternoon / evening / overnight (see below); same ±25% gate; highest cumulative load wins
+3. **C** — catch-all when nothing above qualifies (no ±25% gate)
 
 | Option | Period | ±25% gate? |
 |--------|--------|------------|
 | **A** | Whole-week morning rush (07:00–10:00) | Yes — community mean within 75–125% of MY1 |
 | **B** | Whole-week afternoons (12:00–18:00), spike days in top 25% | Yes — same gate on spike-day means |
-| **C** | Weekday school pick-up (15:00–16:30) | **No** — catch-all when neither A nor B qualifies |
+| **SPIKE** | One of four 6-hour day periods (all days, spike days in top 25%) | Yes — tried only when A and B both fail |
+| **C** | Weekday school pick-up (15:00–16:30) | **No** — fallback |
 
-If A or B passes the gate, the one with the **higher cumulative load** (sum of hourly community concentrations in that window over the report quarter) is used. If neither passes, **C** is shown.
+**Day-period spike options (SPIKE)** partition the 24-hour clock (6 hours each, all days of the week):
+
+| Period | Hours | Label in report text |
+|--------|-------|----------------------|
+| Morning | 06:00–11:59 | *mornings* |
+| Afternoon | 12:00–17:59 | *afternoons* |
+| Evening | 18:00–23:59 | *evenings* |
+| Overnight | 00:00–05:59 | *overnights* |
+
+SPIKE uses the same spike-day method as B (days in the top 25% by community mean during that period). Example bullet text:
+
+> Short-term PM₂.₅ spikes can have important health impacts. On 8 evenings, the community sensor recorded a mean of 18 µg/m³, compared with 16 µg/m³ at Marylebone Road.
+
+Example footnote:
+
+> PM₂.₅ during Q1: mean paired hourly values for evenings (18:00–23:59) on the 8 days in the top 25% by community mean during that period, all days of the week.
 
 Each comparative bullet carries a superscript footnote (numbered after the typical-peak footnote) explaining how that pollutant’s paragraph was calculated for the selected option.
 
@@ -152,17 +232,21 @@ Rscript scripts/test_marylebone_narrative.R
 
 ### Report output location
 
-Knitted PDFs are written to `output/Test reports/` with the site code and timestamp in the filename, e.g. `QuarterlyAQtrends_CLDP0470_20260620_161626.pdf`.
+Knitted PDFs are written to `output/Test reports/` with the site code and timestamp in the filename, e.g.:
 
-This is configured in the `knit:` field at the top of `QuarterlyAQtrends_git.Rmd`. Always knit from the **project root** (the folder containing `R/bl_api.R`).
+- `QuarterlyAQtrends_CLDP0470_20260620_161626.pdf` (bar-chart report)
+- `QuarterlyAQtrends_lungs_CLDP0470_20260620_161626.pdf` (lungs report)
+
+This is configured in the `knit:` field at the top of each `.Rmd` (via `scripts/knit_quarterly_report.R`). Always knit from the **project root** (the folder containing `R/bl_api.R`).
 
 | How you knit | Output path |
 |--------------|-------------|
-| **RStudio** — Knit button (Ctrl/Cmd+Shift+K) | **One** PDF only — first site in `BL_REPORT_SITE_CODES` |
+| **RStudio** — Knit button (Ctrl/Cmd+Shift+K) on `QuarterlyAQtrends_git.Rmd` or `QuarterlyAQtrends_lungs.Rmd` | **One** PDF only — first site in `BL_REPORT_SITE_CODES` |
 | **VS Code** — Knit button | Same as RStudio (one PDF), if **smart knitting** is enabled (`r.rmarkdown.knit.useBackgroundProcess: true` in `.vscode/settings.json`) |
-| **Terminal** (project folder) — `Rscript scripts/render_quarterly_report.R` | **One PDF per site** listed in `BL_REPORT_SITE_CODES` |
+| **Terminal** — `Rscript scripts/render_quarterly_report.R` | **One PDF per site** (bar charts) |
+| **Terminal** — `Rscript scripts/render_lungs_report.R` | **One PDF per site** (lungs plot) |
 
-**Note:** Running `rmarkdown::render("QuarterlyAQtrends_git.Rmd")` directly in the R console does **not** use the custom output path and will write `QuarterlyAQtrends_git.pdf` next to the `.Rmd`. Use the Knit button or `scripts/render_quarterly_report.R` instead.
+**Note:** Running `rmarkdown::render(...)` directly in the R console does **not** use the custom output path and will write a PDF next to the `.Rmd`. Use the Knit button or the `scripts/render_*.R` helpers instead.
 
 ## Editor tasks (optional)
 
@@ -173,9 +257,20 @@ Editors that support [VS Code tasks](https://code.visualstudio.com/docs/editor/t
 | Fetch sensor list | `Rscript scripts/fetch_sensors.R` |
 | Fetch readings | `Rscript scripts/fetch_readings.R` |
 | Generate PM2.5 all-sites plot | `Rscript scripts/generate_plots.R` |
-| Knit quarterly report (PDF) | `Rscript scripts/render_quarterly_report.R` — use from project folder for **all** sites in `BL_REPORT_SITE_CODES` |
+| Knit quarterly report — bar charts (PDF) | `Rscript scripts/render_quarterly_report.R` — **all** sites in `BL_REPORT_SITE_CODES` |
+| Knit quarterly report — lungs plot (PDF) | `Rscript scripts/render_lungs_report.R` — **all** sites in `BL_REPORT_SITE_CODES` |
 
 These match the terminal commands above; use whichever workflow you prefer.
+
+## Lung plot preview (HTML)
+
+**Quick HTML preview** (`mock_lung_exceedance.Rmd`) — standalone page for tweaking the lung plot before using it in the full PDF. Left = NO₂ exceedance %, right = PM₂.₅, one pair per calendar year (same data as the annual bar charts).
+
+```bash
+Rscript -e 'rmarkdown::render("mock_lung_exceedance.Rmd")'
+```
+
+Output: `mock_lung_exceedance.html`. For the full quarterly PDF with lungs, use `QuarterlyAQtrends_lungs.Rmd` and `scripts/render_lungs_report.R` (see above).
 
 ## Dependencies
 
