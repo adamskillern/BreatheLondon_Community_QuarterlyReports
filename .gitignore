@@ -14,8 +14,15 @@
 *.aux
 *.log
 
+# Generated plots in figure/ (static report assets stay tracked)
+figure/*
+!figure/Sensor-blue-V1.png
+!figure/Sensor-blue-V1-removebg.png
+!figure/lungs_blue.png
+
 # Regenerable API cache (run scripts/fetch_*.R)
 data/raw/*.json
+data/raw/*.csv
 data/processed/*.csv
 
 # OS
