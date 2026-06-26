@@ -4,8 +4,13 @@
 
 # R
 .Rhistory
-.RData
 .Rproj.user
+
+# Data files (regenerate locally; do not commit)
+*.csv
+*.RData
+*.rda
+*.Rdata
 
 # Build / knit outputs
 *.pdf
@@ -22,8 +27,6 @@ figure/*
 
 # Regenerable API cache (run scripts/fetch_*.R)
 data/raw/*.json
-data/raw/*.csv
-data/processed/*.csv
 
 # OS
 .DS_Store
