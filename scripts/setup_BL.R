@@ -6,7 +6,9 @@ bl_set_project_root <- function() {
   candidates <- c(
     Sys.getenv("BL_PROJECT_ROOT", unset = ""),
     getwd(),
-    if (basename(getwd()) == "scripts") normalizePath("..", mustWork = FALSE)
+    if (basename(getwd()) %in% c("scripts", "Quality assurance")) {
+      normalizePath("..", mustWork = FALSE)
+    }
   )
   for (root in unique(candidates[nzchar(candidates)])) {
     root <- normalizePath(root, mustWork = FALSE)

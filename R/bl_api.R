@@ -405,6 +405,12 @@ bl_read_sensors_json <- function(path = "data/raw/listSensors.json") {
   sensors$SiteCode <- as.character(sensors$SiteCode)
   sensors$EndDate <- as.character(sensors$EndDate)
   sensors$EndDate[sensors$EndDate == ""] <- NA_character_
+  if ("LastCommunication" %in% names(sensors)) {
+    sensors$LastCommunication <- as.character(sensors$LastCommunication)
+    sensors$LastCommunication[sensors$LastCommunication == ""] <- NA_character_
+  } else {
+    sensors$LastCommunication <- NA_character_
+  }
   sensors
 }
 

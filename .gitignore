@@ -19,6 +19,9 @@
 *.aux
 *.log
 
+# Generated analysis outputs (regenerate locally; do not commit)
+output/
+
 # Generated plots in figure/ (static report assets stay tracked)
 figure/*
 !figure/Sensor-blue-V1.png
@@ -30,3 +33,6 @@ data/raw/*.json
 
 # OS
 .DS_Store
+
+# Local QA working files (do not commit)
+Quality assurance/

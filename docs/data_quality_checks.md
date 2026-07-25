@@ -70,6 +70,6 @@ Ideas for automated QA on hourly NO₂ and PM₂.₅ data. Use alongside `script
 
 - `scripts/analysis_BL.R` — QA workspace, plots, API vs website comparison
 - `R/bl_api.R` — `bl_clean_pollutant_values()` (round + 0 → `NA` for reports)
-- `data/raw/listSensors.json` — per-site `StartDate`, `EndDate`
+- `data/raw/listSensors.json` — per-site `StartDate`, `EndDate`, `LastCommunication` (active/online = has `LastCommunication` and no `EndDate`)
 - `README.md` — rounding policy and report data rules
 
