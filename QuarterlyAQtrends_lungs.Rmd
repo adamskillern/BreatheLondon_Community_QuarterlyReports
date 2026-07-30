@@ -3,6 +3,9 @@ title: "Breathe London Community Programme"
 knit: (function(inputFile, ...) { source("scripts/knit_quarterly_report.R"); knit_quarterly_report(inputFile, ...) })
 params:
   site_code: ""
+  # When TRUE, knit only the NO2 or PM2.5 hourly plot (fast layout iteration)
+  preview_no2_hourly: false
+  preview_pm25_hourly: true
 output: pdf_document
 colorlinks: true
 header-includes:
@@ -40,9 +43,14 @@ if (!file.exists("R/bl_api.R")) {
   stop("Knit from the project root (folder containing R/bl_api.R).")
 }
 source("R/bl_api.R")
-source("R/bl_marylebone.R")
-source("R/bl_report_map.R")
-source("R/bl_lung_exceedance_plot.R")
+preview_no2 <- isTRUE(params$preview_no2_hourly)
+preview_pm25 <- isTRUE(params$preview_pm25_hourly)
+preview_hourly <- preview_no2 || preview_pm25
+if (!preview_hourly) {
+  source("R/bl_marylebone.R")
+  source("R/bl_report_map.R")
+  source("R/bl_lung_exceedance_plot.R")
+}
 bl_load_env()
 
 site_code <- params$site_code
@@ -87,7 +95,7 @@ report_title_line3 <- sprintf(
   sprintf("%d %s", lubridate::day(quarter_end), format(quarter_end, "%B")),
   report_year
 )
-plot_legend_labels <- c("All data to date", quarter_label)
+all_data_label <- "All data to date"
 
 quarter_trend_texts <- c(
   "(Q1) Jan-March: In this quarter we may see higher NO\\textsubscript{2} levels if we have some cold winter mornings that trap emissions near the ground. Towards the end of March we may see some particulate episodes as the farming fertiliser season starts and we have some still high-pressure conditions.",
@@ -839,64 +847,66 @@ bl_spike_cooccurrence_methodology_text <- function(quantile = BL_SPIKE_COOCCURRE
   )
 }
 
-no2_quarter_stats <- bl_pollutant_summary(NO2_DATA_FRAME, "no2", WHO_NO2_DAILY, quarter_start, quarter_end)
-no2_total_stats <- bl_to_date_pollutant_summary(
-  NO2_DATA_FRAME, "no2", WHO_NO2_DAILY, quarter_end, report_year, report_quarter
-)
-pm25_quarter_stats <- bl_pollutant_summary(PM25_DATA_FRAME, "pm25", WHO_PM25_DAILY, quarter_start, quarter_end)
-pm25_total_stats <- bl_to_date_pollutant_summary(
-  PM25_DATA_FRAME, "pm25", WHO_PM25_DAILY, quarter_end, report_year, report_quarter
-)
-no2_peak_periods <- bl_summarise_pollutant_peaks(NO2_DATA_FRAME, "no2")
-pm25_peak_periods <- bl_summarise_pollutant_peaks(PM25_DATA_FRAME, "pm25")
+if (!preview_hourly) {
+  no2_quarter_stats <- bl_pollutant_summary(NO2_DATA_FRAME, "no2", WHO_NO2_DAILY, quarter_start, quarter_end)
+  no2_total_stats <- bl_to_date_pollutant_summary(
+    NO2_DATA_FRAME, "no2", WHO_NO2_DAILY, quarter_end, report_year, report_quarter
+  )
+  pm25_quarter_stats <- bl_pollutant_summary(PM25_DATA_FRAME, "pm25", WHO_PM25_DAILY, quarter_start, quarter_end)
+  pm25_total_stats <- bl_to_date_pollutant_summary(
+    PM25_DATA_FRAME, "pm25", WHO_PM25_DAILY, quarter_end, report_year, report_quarter
+  )
+  no2_peak_periods <- bl_summarise_pollutant_peaks(NO2_DATA_FRAME, "no2")
+  pm25_peak_periods <- bl_summarise_pollutant_peaks(PM25_DATA_FRAME, "pm25")
 
-no2_pm25_pair <- bl_prepare_no2_pm25_pair(
-  NO2_DATA_FRAME, PM25_DATA_FRAME, quarter_start, quarter_end
-)
-spike_cooccurrence <- bl_spike_cooccurrence_metrics(
-  no2_pm25_pair, quantile = BL_SPIKE_COOCCURRENCE_QUANTILE
-)
+  no2_pm25_pair <- bl_prepare_no2_pm25_pair(
+    NO2_DATA_FRAME, PM25_DATA_FRAME, quarter_start, quarter_end
+  )
+  spike_cooccurrence <- bl_spike_cooccurrence_metrics(
+    no2_pm25_pair, quantile = BL_SPIKE_COOCCURRENCE_QUANTILE
+  )
 
-# Marylebone Road (MY1) reference — loads data/processed/marylebone.RData when present
-# (no openair call). If missing, fetches once, saves RData, then reuses for later reports.
-marylebone_hourly <- bl_load_marylebone_hourly()
-no2_marylebone_narrative <- bl_select_marylebone_narrative(
-  NO2_DATA_FRAME, marylebone_hourly, "no2", quarter_start, quarter_end
-)
-pm25_marylebone_narrative <- bl_select_marylebone_narrative(
-  PM25_DATA_FRAME, marylebone_hourly, "pm25", quarter_start, quarter_end
-)
+  # Marylebone Road (MY1) reference — loads data/processed/marylebone.RData when present
+  # (no openair call). If missing, fetches once, saves RData, then reuses for later reports.
+  marylebone_hourly <- bl_load_marylebone_hourly()
+  no2_marylebone_narrative <- bl_select_marylebone_narrative(
+    NO2_DATA_FRAME, marylebone_hourly, "no2", quarter_start, quarter_end
+  )
+  pm25_marylebone_narrative <- bl_select_marylebone_narrative(
+    PM25_DATA_FRAME, marylebone_hourly, "pm25", quarter_start, quarter_end
+  )
 
-marylebone_footnote_entries <- list(
-  list(pollutant_md = "NO~2~", selection = no2_marylebone_narrative),
-  list(pollutant_md = "PM~2.5~", selection = pm25_marylebone_narrative)
-)
-marylebone_footnote_bundle <- bl_collect_marylebone_footnotes(marylebone_footnote_entries)
-marylebone_footnotes <- marylebone_footnote_bundle$footnotes
-no2_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["NO~2~"]]
-pm25_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["PM~2.5~"]]
+  marylebone_footnote_entries <- list(
+    list(pollutant_md = "NO~2~", selection = no2_marylebone_narrative),
+    list(pollutant_md = "PM~2.5~", selection = pm25_marylebone_narrative)
+  )
+  marylebone_footnote_bundle <- bl_collect_marylebone_footnotes(marylebone_footnote_entries)
+  marylebone_footnotes <- marylebone_footnote_bundle$footnotes
+  no2_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["NO~2~"]]
+  pm25_marylebone_footnote_mark <- marylebone_footnote_bundle$marks[["PM~2.5~"]]
 
-spike_cooccurrence_footnote_mark <- if (!is.null(spike_cooccurrence)) {
-  bl_spike_cooccurrence_footnote_mark(length(marylebone_footnotes))
-} else {
-  NULL
-}
-spike_cooccurrence_bullet <- bl_format_spike_cooccurrence_bullet(
-  spike_cooccurrence, quarter_label, spike_cooccurrence_footnote_mark
-)
-spike_cooccurrence_methodology_text <- bl_spike_cooccurrence_methodology_text(
-  BL_SPIKE_COOCCURRENCE_QUANTILE
-)
+  spike_cooccurrence_footnote_mark <- if (!is.null(spike_cooccurrence)) {
+    bl_spike_cooccurrence_footnote_mark(length(marylebone_footnotes))
+  } else {
+    NULL
+  }
+  spike_cooccurrence_bullet <- bl_format_spike_cooccurrence_bullet(
+    spike_cooccurrence, quarter_label, spike_cooccurrence_footnote_mark
+  )
+  spike_cooccurrence_methodology_text <- bl_spike_cooccurrence_methodology_text(
+    BL_SPIKE_COOCCURRENCE_QUANTILE
+  )
 
-report_date <- format(Sys.Date(), "%d %b %Y")
-lungs_banner_path <- "figure/lungs_blue.png"
-if (!file.exists(lungs_banner_path)) {
-  stop("Title banner image not found: ", lungs_banner_path, call. = FALSE)
+  report_date <- format(Sys.Date(), "%d %b %Y")
+  lungs_banner_path <- "figure/lungs_blue.png"
+  if (!file.exists(lungs_banner_path)) {
+    stop("Title banner image not found: ", lungs_banner_path, call. = FALSE)
+  }
 }
 ```
 
 
-```{r first-page-banner, echo=FALSE, results='asis'}
+```{r first-page-banner, echo=FALSE, results='asis', eval=!preview_hourly}
 cat("\\thispagestyle{blfirstpage}\n")
 cat(sprintf("\\renewcommand{\\blpageonetitlelineone}{%s}\n", report_title_line1))
 cat(sprintf("\\renewcommand{\\blpageonetitlelinetwo}{%s}\n", report_title_line2))
@@ -905,7 +915,7 @@ cat("\\blpageonebanner\n")
 cat("\\vspace*{\\dimexpr\\blbannerreserve+\\blbannerpadding\\relax}\n")
 ```
 
-```{r first-page-footer, echo=FALSE, results='asis'}
+```{r first-page-footer, echo=FALSE, results='asis', eval=!preview_hourly}
 cat(sprintf(
   paste0(
     "\\renewcommand{\\blpageonefooter}{",
@@ -920,7 +930,7 @@ cat(sprintf(
 ))
 ```
 
-```{r org-heading, echo=FALSE, results='asis'}
+```{r org-heading, echo=FALSE, results='asis', eval=!preview_hourly}
 cat(sprintf(
   paste0(
     "\\begingroup\\centering\n",
@@ -931,9 +941,11 @@ cat(sprintf(
 ))
 ```
 
-\vspace{2.5\baselineskip}
+```{r preview-skip-front-matter, echo=FALSE, results='asis', eval=!preview_hourly}
+cat("\\vspace{2.5\\baselineskip}\n")
+```
 
-```{r sensor-location-map, echo=FALSE, fig.align='center', out.width='\\textwidth'}
+```{r sensor-location-map, echo=FALSE, fig.align='center', out.width='\\textwidth', eval=!preview_hourly}
 sensor_map_path <- bl_render_site_location_map(
   site = site_code,
   icon_png = "figure/Sensor-blue-V1-removebg.png",
@@ -969,66 +981,458 @@ hourly_means_df <- function(df, value_col, quarter_label) {
   means_quarter <- df %>%
     filter(between(Date2, quarter_start, quarter_end)) %>%
     group_by(hours) %>% summarise_at(value_col, list(mean = mean_fn))
-  means_all$name     <- "All data to date"
+  means_all$name     <- all_data_label
   means_quarter$name <- quarter_label
   rbind(means_all, means_quarter)
 }
 
+# Quarter means are drawn as bars, all-data means as an overlaid line
+quarter_rows  <- function(df) df %>% filter(name != all_data_label)
+all_data_rows <- function(df) df %>% filter(name == all_data_label)
+
+# PM2.5 quarter bars: light grey fill + small mid-grey dots scattered in each bar
+pm25_bar_dots_df <- function(df, y_step = 0.32) {
+  qr <- quarter_rows(df)
+  dots <- lapply(seq_len(nrow(qr)), function(i) {
+    m <- qr$mean[i]
+    if (!is.finite(m) || m <= 0) return(NULL)
+    ys <- seq(y_step * 0.45, m - y_step * 0.25, by = y_step)
+    if (!length(ys)) ys <- min(m / 2, m)
+    data.frame(
+      hours = rep(qr$hours[i], length(ys) * 2L),
+      y = rep(ys, each = 2L),
+      stringsAsFactors = FALSE
+    )
+  })
+  dplyr::bind_rows(dots)
+}
+
+pm25_quarter_col_layer <- function(df) {
+  ggplot2::geom_col(
+    data = quarter_rows(df),
+    aes(x = factor(hours), y = mean),
+    fill = pm25_quarter_col,
+    colour = NA,
+    width = 0.78,
+    position = "identity",
+    inherit.aes = FALSE
+  )
+}
+
+pm25_quarter_dot_layer <- function(df) {
+  ggplot2::geom_point(
+    data = pm25_bar_dots_df(df),
+    aes(x = factor(hours), y = y),
+    colour = pm25_quarter_dot_col,
+    size = 0.22,
+    position = ggplot2::position_jitter(width = 0.34, height = 0.22, seed = 42),
+    inherit.aes = FALSE
+  )
+}
+
+# Label y for series end text (nudge off nearby limit / other labels)
+bl_label_y <- function(series_df, limit_ys = numeric(), y_max) {
+  end <- series_df %>%
+    dplyr::mutate(hours = as.character(hours)) %>%
+    dplyr::arrange(hours) %>%
+    dplyr::slice_tail(n = 1)
+  y_lab <- as.numeric(end$mean) + 2.8
+  gap <- 3.8
+  for (pass in seq_len(5)) {
+    for (ly in limit_ys) {
+      if (abs(y_lab - ly) < gap) y_lab <- if (y_lab >= ly) ly + gap else ly - gap
+    }
+  }
+  min(max(y_lab, 1.5), y_max - 0.8)
+}
+
+# Place in-panel line labels + connector sticks.
+# Series order is kept as given. First letter of each label starts at start_hours
+# (hjust = 0). Text and sticks stay clear of all series/bars under the label span.
+bl_place_line_annots <- function(series, quarter_df, limit_ys, y_max,
+                                 start_hours = c("00:00", "09:00", "16:00")) {
+  stopifnot(length(series) >= 1L)
+  hours <- sort(unique(unlist(lapply(series, function(s) as.character(s$df$hours)))))
+  n <- length(hours)
+  if (!n) stop("No hours available for line annotations", call. = FALSE)
+  m <- length(series)
+  if (length(start_hours) < m) {
+    stop("Need at least ", m, " start_hours for line annotations", call. = FALSE)
+  }
+
+  text_width <- function(label) max(4, nchar(label) * 0.45)
+  text_height <- 3.6
+  line_gap <- 1.4
+  label_gap <- 1.0
+  stick_text_gap <- 0.45
+
+  qd <- quarter_df %>%
+    dplyr::mutate(hours = as.character(hours), bar = as.numeric(mean)) %>%
+    dplyr::select(hours, bar)
+  bar_y <- qd$bar[match(hours, qd$hours)]
+  bar_y[!is.finite(bar_y)] <- 0
+
+  series_y <- matrix(NA_real_, nrow = m, ncol = n)
+  for (k in seq_len(m)) {
+    sdf <- series[[k]]$df %>%
+      dplyr::mutate(hours = as.character(hours), mean = as.numeric(mean))
+    series_y[k, ] <- sdf$mean[match(hours, sdf$hours)]
+  }
+  all_y <- rbind(series_y, bar_y)
+  env_at <- function(i0, i1) max(all_y[, i0:i1, drop = FALSE], na.rm = TRUE)
+
+  x_overlaps <- function(i0, i1, j0, j1) i0 <= j1 && j0 <= i1
+
+  placed <- list()
+  out <- vector("list", m)
+
+  for (k in seq_len(m)) {
+    s <- series[[k]]
+    i <- match(start_hours[[k]], hours)
+    if (is.na(i)) {
+      stop("start_hours not found in data: ", start_hours[[k]], call. = FALSE)
+    }
+    tw <- text_width(s$label)
+    i1 <- min(n, i + max(1L, as.integer(ceiling(tw))) - 1L)
+    line_y <- series_y[k, i]
+    if (!is.finite(line_y)) line_y <- 0
+
+    env_top <- env_at(i, i1)
+    y_lab <- env_top + line_gap
+    y_top <- y_lab + text_height
+
+    for (ly in limit_ys) {
+      if (ly >= y_lab - 0.6 && ly <= y_top + 0.6) {
+        y_lab <- ly + 1.2
+        y_top <- y_lab + text_height
+      }
+    }
+
+    for (p in placed) {
+      if (x_overlaps(i, i1, p$i, p$i1)) {
+        y_lab <- max(y_lab, p$y_top + label_gap)
+        y_top <- y_lab + text_height
+      }
+    }
+
+    y_top <- y_lab + text_height
+    stick_y0 <- line_y
+    stick_y1 <- max(stick_y0 + 0.6, y_lab - stick_text_gap)
+
+    placed[[k]] <- list(i = i, i1 = i1, y_top = y_top)
+    out[[k]] <- data.frame(
+      hours = hours[[i]],
+      mean = y_lab,
+      line_mean = line_y,
+      stick_y0 = stick_y0,
+      stick_y1 = stick_y1,
+      label = s$label,
+      colour = s$colour,
+      hjust = 0,
+      stringsAsFactors = FALSE
+    )
+  }
+  out
+}
+
+# Quarter callout arrow scaled to y_max so visual offset from text matches PM2.5 layout.
+bl_quarter_callout_arrow <- function(y_max, ref_y_max = y_max,
+                                     text_x = 0.02, text_y = 0.35) {
+  scale_y <- y_max / ref_y_max
+  list(
+    text_x = text_x,
+    text_y = text_y,
+    arrow_x = text_x + 0.05,
+    arrow_y = text_y + 1.70 * scale_y,
+    arrow_xend = text_x - 0.02,
+    arrow_yend = text_y + 2.50 * scale_y
+  )
+}
+
+# All-data diurnal means for one series (used for closest-sensor overlay)
+hourly_all_means_df <- function(df, value_col, series_name) {
+  mean_fn <- function(x) round(mean(x, na.rm = TRUE), BL_REPORT_ROUND_DIGITS)
+  df %>%
+    group_by(hours) %>%
+    summarise_at(value_col, list(mean = mean_fn)) %>%
+    mutate(name = series_name)
+}
+
+hour_breaks_3h <- sprintf("%02d:00", seq(0, 21, by = 3))
+hour_labels_3h <- vapply(seq(0, 21, by = 3), bl_format_ampm_hour, character(1))
+axis_tick_size <- 15
+hourly_panel_title <- element_text(hjust = 0.5, size = rel(1.2), face = "bold")
+hourly_y_title <- element_text(size = rel(1.2), face = "bold")
+# Weekday and weekend data panels must stay equal width (positions 1 and 3).
+hourly_panel_rel_widths <- c(1, 0.03, 1, 0.88)
+no2_quarter_col <- "#C17EB9"
+no2_all_col <- "#A21A73"
+no2_nearest_col <- "#069494"
+london_col <- "#73A21A"
+pm25_quarter_col <- "#D9D9D9"
+pm25_quarter_dot_col <- "#888888"
+pm25_all_col <- "#888888"
+pm25_nearest_col <- "#069494"
+pm25_london_col <- "#73A21A"
+
+nearest_site <- bl_nearest_active_site(site_code = site_code)$nearest
+nearest_code <- as.character(nearest_site$SiteCode[1])
+nearest_label <- "Nearest sensor"
+london_label <- "London mean"
+line_levels <- c(all_data_label, nearest_label, london_label)
+# Same thickness for all overlay lines
+line_widths <- setNames(c(2.5, 2.5, 2.5), line_levels)
+nearest_readings <- bl_fetch_readings(site_code = nearest_code, clean = TRUE)
+
+# Equal-weighted mean of BL_REPORT_SITE_CODES diurnal profiles (test stand-in for London)
+bl_mean_across_sites_hourly <- function(parsed_list, value_col, weekdays_filter, label) {
+  site_means <- lapply(parsed_list, function(df) {
+    hourly_all_means_df(
+      df %>% dplyr::filter(weekday %in% weekdays_filter),
+      value_col,
+      "tmp"
+    ) %>%
+      dplyr::select(hours, mean)
+  })
+  dplyr::bind_rows(site_means) %>%
+    dplyr::group_by(hours) %>%
+    dplyr::summarise(
+      mean = round(mean(mean, na.rm = TRUE), BL_REPORT_ROUND_DIGITS),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(name = label)
+}
+
+london_site_codes <- bl_resolve_report_site_codes()
+london_readings <- lapply(london_site_codes, function(code) {
+  if (identical(code, site_code)) {
+    list(no2 = NO2_DATA_FRAME, pm25 = PM25_DATA_FRAME)
+  } else {
+    bl_fetch_readings(site_code = code, clean = TRUE)
+  }
+})
+london_no2_parsed <- lapply(london_readings, function(x) parse_hourly(x$no2))
+
 # Parse dates and tag weekday number for both pollutants
 NO2_parsed  <- parse_hourly(NO2_DATA_FRAME)
-PM25_parsed <- parse_hourly(PM25_DATA_FRAME)
-
-# Split each pollutant into weekday (Mon–Fri) and weekend (Sat–Sun) subsets
 NO2_weekdays  <- NO2_parsed  %>% filter(weekday %in% 2:6)
 NO2_weekends  <- NO2_parsed  %>% filter(weekday %in% c(1, 7))
+NO2_plot_df            <- hourly_means_df(NO2_weekdays,  "no2",  quarter_label)
+NO2_plot_weekends_df   <- hourly_means_df(NO2_weekends,  "no2",  quarter_label)
+
+NO2_nearest_parsed <- parse_hourly(nearest_readings$no2)
+NO2_nearest_weekdays_df <- hourly_all_means_df(
+  NO2_nearest_parsed %>% filter(weekday %in% 2:6), "no2", nearest_label
+)
+NO2_nearest_weekends_df <- hourly_all_means_df(
+  NO2_nearest_parsed %>% filter(weekday %in% c(1, 7)), "no2", nearest_label
+)
+NO2_london_weekdays_df <- bl_mean_across_sites_hourly(
+  london_no2_parsed, "no2", 2:6, london_label
+)
+NO2_london_weekends_df <- bl_mean_across_sites_hourly(
+  london_no2_parsed, "no2", c(1, 7), london_label
+)
+NO2_line_weekdays_df <- bind_rows(
+  all_data_rows(NO2_plot_df), NO2_nearest_weekdays_df, NO2_london_weekdays_df
+)
+NO2_line_weekends_df <- bind_rows(
+  all_data_rows(NO2_plot_weekends_df), NO2_nearest_weekends_df, NO2_london_weekends_df
+)
+NO2_line_cols <- setNames(scales::alpha(c(no2_all_col, no2_nearest_col, london_col), 0.65), line_levels)
+NO2_line_types <- setNames(c("solid", "solid", "solid"), line_levels)
+
+PM25_parsed <- parse_hourly(PM25_DATA_FRAME)
 PM25_weekdays <- PM25_parsed %>% filter(weekday %in% 2:6)
 PM25_weekends <- PM25_parsed %>% filter(weekday %in% c(1, 7))
-
-# Build plot data frames: all-data hourly mean + quarter hourly mean, for each group
-NO2_plot_df            <- hourly_means_df(NO2_weekdays,  "no2",  quarter_label)
 PM2.5_plot_df          <- hourly_means_df(PM25_weekdays, "pm25", quarter_label)
-NO2_plot_weekends_df   <- hourly_means_df(NO2_weekends,  "no2",  quarter_label)
 PM2.5_plot_weekends_df <- hourly_means_df(PM25_weekends, "pm25", quarter_label)
 
+PM25_nearest_parsed <- parse_hourly(nearest_readings$pm25)
+PM25_nearest_weekdays_df <- hourly_all_means_df(
+  PM25_nearest_parsed %>% filter(weekday %in% 2:6), "pm25", nearest_label
+)
+PM25_nearest_weekends_df <- hourly_all_means_df(
+  PM25_nearest_parsed %>% filter(weekday %in% c(1, 7)), "pm25", nearest_label
+)
+london_pm25_parsed <- lapply(london_readings, function(x) parse_hourly(x$pm25))
+PM25_london_weekdays_df <- bl_mean_across_sites_hourly(
+  london_pm25_parsed, "pm25", 2:6, london_label
+)
+PM25_london_weekends_df <- bl_mean_across_sites_hourly(
+  london_pm25_parsed, "pm25", c(1, 7), london_label
+)
+PM25_line_weekdays_df <- bind_rows(
+  all_data_rows(PM2.5_plot_df), PM25_nearest_weekdays_df, PM25_london_weekdays_df
+)
+PM25_line_weekends_df <- bind_rows(
+  all_data_rows(PM2.5_plot_weekends_df), PM25_nearest_weekends_df, PM25_london_weekends_df
+)
+PM25_line_cols <- setNames(scales::alpha(c(pm25_all_col, pm25_nearest_col, pm25_london_col), 0.65), line_levels)
+PM25_line_types <- setNames(c("solid", "solid", "solid"), line_levels)
+
+hourly_callout_ref_y_max <- max(
+  25,
+  max(PM2.5_plot_df$mean, PM25_line_weekdays_df$mean, PM25_line_weekends_df$mean, na.rm = TRUE),
+  na.rm = TRUE
+)
+PM25_callout_annots <- bl_place_line_annots(
+  list(
+    list(df = PM25_nearest_weekends_df, label = nearest_label, colour = pm25_nearest_col),
+    list(df = PM25_london_weekends_df, label = london_label, colour = pm25_london_col),
+    list(df = all_data_rows(PM2.5_plot_weekends_df), label = all_data_label, colour = pm25_all_col)
+  ),
+  quarter_rows(PM2.5_plot_weekends_df),
+  c(25, 15, 5),
+  hourly_callout_ref_y_max
+)
+hourly_callout_ref_y_max <- max(
+  hourly_callout_ref_y_max,
+  max(dplyr::bind_rows(PM25_callout_annots)$mean) + 3.8
+)
+
 ```
 
-\newpage
-
-# NO~2~ 
-
-## Average NO~2~ each hour at Breathe London node
-
-```{r, out.width='\\textwidth', fig.width = 10, fig.height = 4, fig.align='center', fig.show='hold'}
-NO2_plot <- ggplot(NO2_plot_df)+
-  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
-  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
-  xlab("Hour (Weekday)") + ylab("Mean NO"[2]~"in ug/u3") + ggtitle("WEEKDAYS") +
-  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 40, label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#7e0052", "#eea7e6"), name = "Data range", labels = plot_legend_labels) +
-  theme(legend.position="none", plot.title = element_text(hjust = 0.5))
-
-NO2_plot_weekend <- ggplot(NO2_plot_weekends_df)+
-  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
-  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
-  xlab("Hour (Weekend)") + ggtitle("WEEKENDS") +
-  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 40, label = "UK NO2 annual mean objective (40 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 25, label = "WHO NO2 daily mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 5, label = "WHO NO2 annual mean objective (10 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) + 
-  scale_fill_manual(values=c("#7e0052", "#eea7e6"), name = "Data range", labels = plot_legend_labels) +
-   theme(plot.title = element_text(hjust = 0.5))
-
-plot_grid(NO2_plot, NO2_plot_weekend, align = "h", ncol = 2, rel_widths = c(1/4, 1/3))
+```{r preview-no2-heading, echo=FALSE, results='asis', eval=preview_no2}
+if (preview_no2) {
+  cat("\\thispagestyle{plain}\n")
+} else {
+  cat("\\newpage\n")
+}
+cat("# NO~2~\n\n## Average NO~2~ each hour at Breathe London node\n")
 ```
 
-```{r no2-quarter-summary, echo=FALSE, results='asis'}
+```{r no2-hourly-plot, eval=preview_no2, out.width='\\textwidth', fig.width = 12.5, fig.height = 4.4, fig.align='center', fig.show='hold'}
+NO2_y_max <- max(
+  40,
+  max(NO2_plot_df$mean, NO2_line_weekdays_df$mean, NO2_line_weekends_df$mean, na.rm = TRUE),
+  na.rm = TRUE
+)
+NO2_limit_ys <- c(40, 25, 10)
+NO2_line_annots <- bl_place_line_annots(
+  list(
+    list(df = NO2_nearest_weekends_df, label = nearest_label, colour = no2_nearest_col),
+    list(df = NO2_london_weekends_df, label = london_label, colour = london_col),
+    list(df = all_data_rows(NO2_plot_weekends_df), label = all_data_label, colour = no2_all_col)
+  ),
+  quarter_rows(NO2_plot_weekends_df),
+  NO2_limit_ys,
+  NO2_y_max
+)
+NO2_annot_df <- dplyr::bind_rows(NO2_line_annots)
+NO2_y_max <- max(NO2_y_max, max(NO2_annot_df$mean) + 3.8)
+annot_size <- 4.9
+annot_size_inpanel <- 4.2
+axis_x_theme <- theme(
+  axis.text.x = element_text(
+    angle = 45, vjust = 1, hjust = 1, size = axis_tick_size,
+    margin = margin(t = 0)
+  ),
+  axis.ticks.length.x = unit(0, "pt"),
+  axis.title.x = element_text(margin = margin(t = 2))
+)
+NO2_plot <- ggplot(NO2_plot_df, aes(factor(hours), mean))+
+  geom_col(data = quarter_rows(NO2_plot_df), aes(fill=name), position="identity")+
+  geom_line(
+    data = NO2_line_weekdays_df,
+    aes(colour = name, linetype = name, linewidth = name, group = name)
+  )+
+  theme_minimal() +
+  axis_x_theme +
+  theme(
+    axis.text.y = element_text(size = axis_tick_size),
+    axis.title.y = hourly_y_title,
+    legend.position = "none",
+    plot.title = hourly_panel_title,
+    plot.margin = margin(5, 1, 8, 5)
+  ) +
+  xlab("Hour (Weekday)") + ylab(expression(Mean~NO[2]~"in ug/m"^3)) + ggtitle("WEEKDAYS") +
+  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 10, linetype = "dashed", color = "black") +
+  coord_cartesian(ylim = c(0, NO2_y_max)) +
+  scale_x_discrete(breaks = hour_breaks_3h, labels = hour_labels_3h) +
+  scale_fill_manual(values = setNames(no2_quarter_col, quarter_label), name = "Data range") +
+  scale_colour_manual(values = NO2_line_cols, breaks = line_levels, name = NULL) +
+  scale_linetype_manual(values = NO2_line_types, breaks = line_levels, guide = "none") +
+  scale_linewidth_manual(values = line_widths, breaks = line_levels, guide = "none")
+
+NO2_plot_weekend <- ggplot(NO2_plot_weekends_df, aes(factor(hours), mean))+
+  geom_col(data = quarter_rows(NO2_plot_weekends_df), aes(fill=name), position="identity")+
+  geom_line(
+    data = NO2_line_weekends_df,
+    aes(colour = name, linetype = name, linewidth = name, group = name)
+  )+
+  geom_segment(
+    data = NO2_annot_df,
+    aes(x = hours, xend = hours, y = stick_y0, yend = stick_y1, colour = colour),
+    linewidth = 0.5,
+    inherit.aes = FALSE
+  )+
+  geom_text(
+    data = NO2_annot_df,
+    aes(x = hours, y = mean, label = label, colour = colour, hjust = hjust),
+    size = annot_size_inpanel,
+    vjust = 0,
+    inherit.aes = FALSE
+  )+
+  geom_hline(yintercept = 40, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 10, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  axis_x_theme +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(color = NA, size = axis_tick_size),
+    axis.ticks.y = element_blank(),
+    legend.position = "none",
+    plot.title = hourly_panel_title,
+    plot.margin = margin(5, 0, 8, 0)
+  ) +
+  xlab("Hour (Weekend)") + ylab(NULL) + ggtitle("WEEKENDS") +
+  coord_cartesian(ylim = c(0, NO2_y_max)) +
+  scale_x_discrete(breaks = hour_breaks_3h, labels = hour_labels_3h) +
+  scale_fill_manual(values = setNames(no2_quarter_col, quarter_label), name = "Data range") +
+  scale_colour_manual(
+    values = c(NO2_line_cols, setNames(NO2_annot_df$colour, NO2_annot_df$colour)),
+    guide = "none"
+  ) +
+  scale_linetype_manual(values = NO2_line_types, breaks = line_levels, guide = "none") +
+  scale_linewidth_manual(values = line_widths, breaks = line_levels, guide = "none")
+
+NO2_callout <- bl_quarter_callout_arrow(NO2_y_max, hourly_callout_ref_y_max)
+NO2_limit_labels <- ggplot() +
+  annotate("text", x = 0, y = 40, label = expression(paste("UK ", NO[2], " annual mean limit (40 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate("text", x = 0, y = 25, label = expression(paste("WHO ", NO[2], " daily mean limit (25 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate("text", x = 0, y = 10, label = expression(paste("WHO ", NO[2], " annual mean limit (10 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate(
+    "text", x = NO2_callout$text_x, y = NO2_callout$text_y,
+    label = expression(paste("Here is what ", NO[2], " looks like this quarter")),
+    hjust = 0, vjust = 0, size = annot_size, colour = no2_quarter_col
+  ) +
+  annotate(
+    "curve",
+    x = NO2_callout$arrow_x, y = NO2_callout$arrow_y,
+    xend = NO2_callout$arrow_xend, yend = NO2_callout$arrow_yend,
+    curvature = 0.45,
+    colour = no2_quarter_col,
+    linewidth = 0.65,
+    lineend = "round",
+    arrow = arrow(length = unit(0.16, "cm"), type = "closed", angle = 25)
+  ) +
+  coord_cartesian(ylim = c(0, NO2_y_max), xlim = c(0, 1), clip = "off") +
+  theme_void() +
+  theme(plot.margin = margin(22, 2, 36, -10))
+
+plot_grid(
+  NO2_plot, NULL, NO2_plot_weekend, NO2_limit_labels,
+  align = "h", axis = "tb", ncol = 4,
+  rel_widths = hourly_panel_rel_widths
+)
+if (preview_no2) knitr::knit_exit()
+```
+
+```{r no2-quarter-summary, echo=FALSE, results='asis', eval=!preview_hourly}
 bl_emit_summary_box(
   sprintf("Summary of %s", quarter_label),
   no2_quarter_stats,
@@ -1043,7 +1447,7 @@ bl_emit_summary_box(
 )
 ```
 
-```{r no2-total-summary, echo=FALSE, results='asis'}
+```{r no2-total-summary, echo=FALSE, results='asis', eval=!preview_hourly}
 bl_emit_summary_box(
   summary_to_date_heading,
   no2_total_stats,
@@ -1054,52 +1458,150 @@ bl_emit_summary_box(
 )
 ```
 
-\newpage
-
-# PM~2.5~
-
-## Average PM~2.5~ each hour at Breathe London node
-
-```{r, out.width='\\textwidth', fig.width = 10, fig.height = 4, fig.align='center', fig.show='hold'}
-PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df)+
-  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
-  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
-  xlab("Hour") + ylab("Mean PM2.5 in ug/u3") + ggtitle("WEEKDAYS") +
-  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 25, label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("black", "#B0B0C0"), name = "Data range", labels = plot_legend_labels) +
-  theme(legend.position="none", plot.title = element_text(hjust = 0.5))
-
-PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df)+
-  geom_bar(aes(factor(hours),mean,fill=name),stat="identity",position="identity",alpha=0.9)+
-  theme_minimal() + theme(axis.text.x = element_text(angle = 45, vjust = 0.8, hjust=1)) + 
-  xlab("Hour") + ggtitle("WEEKENDS") +
-  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 25, label = "UK PM2.5 annual mean objective (25 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 15, label = "WHO PM2.5 daily mean objective (15 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
-  annotate("text", x = 0, y = 5, label = "WHO PM2.5 annual mean objective (5 ug/m3)", vjust = 1.5, hjust = -0.1, color = "black", size = 3.5) +
-  scale_fill_manual(values=c("black", "#a09fab"), name = "Data range", labels = plot_legend_labels)+
-   theme(plot.title = element_text(hjust = 0.5))
-
-plot_grid(PM2.5_plot_weekdays, PM2.5_plot_weekends, align = "h", ncol = 2, rel_widths = c(1/4, 1/3)) 
-
-# new: #676767
-# old #808080
-# old light color: #B0B0C0
-
-# no2 new q1: #C17EB9
-# no2 new all: #A21A73
-
-
+```{r preview-pm25-heading, echo=FALSE, results='asis', eval=preview_pm25}
+if (preview_pm25) {
+  cat("\\thispagestyle{plain}\n")
+} else {
+  cat("\\newpage\n")
+}
+cat("# PM~2.5~\n\n## Average PM~2.5~ each hour at Breathe London node\n")
 ```
 
-```{r pm25-quarter-summary, echo=FALSE, results='asis'}
+```{r pm25-page-heading, echo=FALSE, results='asis', eval=!preview_pm25 && !preview_no2}
+cat("\\newpage\n\n# PM~2.5~\n\n## Average PM~2.5~ each hour at Breathe London node\n")
+```
+
+```{r pm25-hourly-plot, eval=!preview_no2, out.width='\\textwidth', fig.width = 12.5, fig.height = 4.4, fig.align='center', fig.show='hold'}
+PM25_y_max <- max(
+  25,
+  max(PM2.5_plot_df$mean, PM25_line_weekdays_df$mean, PM25_line_weekends_df$mean, na.rm = TRUE),
+  na.rm = TRUE
+)
+PM25_limit_ys <- c(25, 15, 5)
+PM25_line_annots <- bl_place_line_annots(
+  list(
+    list(df = PM25_nearest_weekends_df, label = nearest_label, colour = pm25_nearest_col),
+    list(df = PM25_london_weekends_df, label = london_label, colour = pm25_london_col),
+    list(df = all_data_rows(PM2.5_plot_weekends_df), label = all_data_label, colour = pm25_all_col)
+  ),
+  quarter_rows(PM2.5_plot_weekends_df),
+  PM25_limit_ys,
+  PM25_y_max
+)
+PM25_annot_df <- dplyr::bind_rows(PM25_line_annots)
+PM25_y_max <- max(PM25_y_max, max(PM25_annot_df$mean) + 3.8)
+annot_size <- 4.9
+annot_size_inpanel <- 4.2
+axis_x_theme <- theme(
+  axis.text.x = element_text(
+    angle = 45, vjust = 1, hjust = 1, size = axis_tick_size,
+    margin = margin(t = 0)
+  ),
+  axis.ticks.length.x = unit(0, "pt"),
+  axis.title.x = element_text(margin = margin(t = 2))
+)
+PM2.5_plot_weekdays <- ggplot(PM2.5_plot_df, aes(factor(hours), mean))+
+  pm25_quarter_col_layer(PM2.5_plot_df)+
+  pm25_quarter_dot_layer(PM2.5_plot_df)+
+  geom_line(
+    data = PM25_line_weekdays_df,
+    aes(colour = name, linetype = name, linewidth = name, group = name)
+  )+
+  theme_minimal() +
+  axis_x_theme +
+  theme(
+    axis.text.y = element_text(size = axis_tick_size),
+    axis.title.y = hourly_y_title,
+    legend.position = "none",
+    plot.title = hourly_panel_title,
+    plot.margin = margin(5, 1, 8, 5)
+  ) +
+  xlab("Hour (Weekday)") + ylab(expression(Mean~PM[2.5]~"in ug/m"^3)) + ggtitle("WEEKDAYS") +
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  coord_cartesian(ylim = c(0, PM25_y_max)) +
+  scale_x_discrete(breaks = hour_breaks_3h, labels = hour_labels_3h) +
+  scale_colour_manual(values = PM25_line_cols, breaks = line_levels, name = NULL) +
+  scale_linetype_manual(values = PM25_line_types, breaks = line_levels, guide = "none") +
+  scale_linewidth_manual(values = line_widths, breaks = line_levels, guide = "none")
+
+PM2.5_plot_weekends <- ggplot(PM2.5_plot_weekends_df, aes(factor(hours), mean))+
+  pm25_quarter_col_layer(PM2.5_plot_weekends_df)+
+  pm25_quarter_dot_layer(PM2.5_plot_weekends_df)+
+  geom_line(
+    data = PM25_line_weekends_df,
+    aes(colour = name, linetype = name, linewidth = name, group = name)
+  )+
+  geom_segment(
+    data = PM25_annot_df,
+    aes(x = hours, xend = hours, y = stick_y0, yend = stick_y1, colour = colour),
+    linewidth = 0.5,
+    inherit.aes = FALSE
+  )+
+  geom_text(
+    data = PM25_annot_df,
+    aes(x = hours, y = mean, label = label, colour = colour, hjust = hjust),
+    size = annot_size_inpanel,
+    vjust = 0,
+    inherit.aes = FALSE
+  )+
+  geom_hline(yintercept = 25, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 15, linetype = "dashed", color = "black") +
+  geom_hline(yintercept = 5, linetype = "dashed", color = "black") +
+  theme_minimal() +
+  axis_x_theme +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(color = NA, size = axis_tick_size),
+    axis.ticks.y = element_blank(),
+    legend.position = "none",
+    plot.title = hourly_panel_title,
+    plot.margin = margin(5, 0, 8, 0)
+  ) +
+  xlab("Hour (Weekend)") + ylab(NULL) + ggtitle("WEEKENDS") +
+  coord_cartesian(ylim = c(0, PM25_y_max)) +
+  scale_x_discrete(breaks = hour_breaks_3h, labels = hour_labels_3h) +
+  scale_colour_manual(
+    values = c(PM25_line_cols, setNames(PM25_annot_df$colour, PM25_annot_df$colour)),
+    guide = "none"
+  ) +
+  scale_linetype_manual(values = PM25_line_types, breaks = line_levels, guide = "none") +
+  scale_linewidth_manual(values = line_widths, breaks = line_levels, guide = "none")
+
+PM25_callout <- bl_quarter_callout_arrow(PM25_y_max, hourly_callout_ref_y_max)
+PM2.5_limit_labels <- ggplot() +
+  annotate("text", x = 0, y = 25, label = expression(paste("UK ", PM[2.5], " annual mean limit (25 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate("text", x = 0, y = 15, label = expression(paste("WHO ", PM[2.5], " daily mean limit (15 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate("text", x = 0, y = 5, label = expression(paste("WHO ", PM[2.5], " annual mean limit (5 ug/m"^3, ")")), hjust = 0, size = annot_size) +
+  annotate(
+    "text", x = PM25_callout$text_x, y = PM25_callout$text_y,
+    label = expression(paste("Here is what ", PM[2.5], " looks like this quarter")),
+    hjust = 0, vjust = 0, size = annot_size, colour = pm25_quarter_dot_col
+  ) +
+  annotate(
+    "curve",
+    x = PM25_callout$arrow_x, y = PM25_callout$arrow_y,
+    xend = PM25_callout$arrow_xend, yend = PM25_callout$arrow_yend,
+    curvature = 0.45,
+    colour = pm25_quarter_dot_col,
+    linewidth = 0.65,
+    lineend = "round",
+    arrow = arrow(length = unit(0.16, "cm"), type = "closed", angle = 25)
+  ) +
+  coord_cartesian(ylim = c(0, PM25_y_max), xlim = c(0, 1), clip = "off") +
+  theme_void() +
+  theme(plot.margin = margin(22, 2, 36, -10))
+
+plot_grid(
+  PM2.5_plot_weekdays, NULL, PM2.5_plot_weekends, PM2.5_limit_labels,
+  align = "h", axis = "tb", ncol = 4,
+  rel_widths = hourly_panel_rel_widths
+)
+if (preview_pm25) knitr::knit_exit()
+```
+
+```{r pm25-quarter-summary, echo=FALSE, results='asis', eval=!preview_hourly}
 bl_emit_summary_box(
   sprintf("Summary of %s", quarter_label),
   pm25_quarter_stats,
@@ -1113,7 +1615,7 @@ bl_emit_summary_box(
 )
 ```
 
-```{r pm25-total-summary, echo=FALSE, results='asis'}
+```{r pm25-total-summary, echo=FALSE, results='asis', eval=!preview_hourly}
 bl_emit_summary_box(
   summary_to_date_heading,
   pm25_total_stats,
@@ -1142,8 +1644,8 @@ lungs_text_sizes <- bl_lung_plot_text_sizes(
 lung_exceedance_plot <- bl_plot_lung_exceedance(
   no2_total_stats,
   pm25_total_stats,
-  no2_color = "#7e0052",
-  pm25_color = "black",
+  no2_color = no2_all_col,
+  pm25_color = pm25_all_col,
   text_sizes = lungs_text_sizes,
   plot_subtitle = "Lung fill height = % of days exceeding the WHO daily mean; label above = exceedance day count"
 )
@@ -1184,3 +1686,4 @@ cat(
 )
 cat("}\n")
 ```
+

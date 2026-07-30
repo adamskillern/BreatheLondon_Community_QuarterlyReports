@@ -488,6 +488,54 @@ bl_site_location <- function(
   )
 }
 
+# Haversine distance (km) between two lat/lon points (or vectors of points).
+bl_earth_dist_km <- function(lat1, lon1, lat2, lon2) {
+  rad <- pi / 180
+  r <- 6371
+  dlat <- (lat2 - lat1) * rad
+  dlon <- (lon2 - lon1) * rad
+  lat1_r <- lat1 * rad
+  lat2_r <- lat2 * rad
+  h <- sin(dlat / 2)^2 + cos(lat1_r) * cos(lat2_r) * sin(dlon / 2)^2
+  r * 2 * atan2(sqrt(h), sqrt(1 - h))
+}
+
+# Closest still-active sensor to site_code (EndDate missing = active).
+bl_nearest_active_site <- function(
+    site_code = NULL,
+    sensors_path = "data/raw/listSensors.json"
+) {
+  if (!exists("BL_SITE_CODE", envir = .bl_env_expanded)) {
+    bl_load_env()
+  }
+  site_code <- site_code %||% bl_env("BL_SITE_CODE")
+  if (!nzchar(site_code)) {
+    stop("Set BL_SITE_CODE in .env", call. = FALSE)
+  }
+  sensors <- bl_read_sensors_json(sensors_path)
+  target <- sensors[sensors$SiteCode == site_code, , drop = FALSE][1, , drop = FALSE]
+  if (!nrow(target) || is.na(target$SiteCode[1])) {
+    stop("Site not found in sensor list: ", site_code, call. = FALSE)
+  }
+  lat0 <- as.numeric(target$Latitude[1])
+  lon0 <- as.numeric(target$Longitude[1])
+  active <- sensors[is.na(sensors$EndDate) & sensors$SiteCode != site_code, , drop = FALSE]
+  if (!nrow(active)) {
+    stop("No other active sensors found near ", site_code, call. = FALSE)
+  }
+  active$dist_km <- bl_earth_dist_km(
+    lat0, lon0,
+    as.numeric(active$Latitude), as.numeric(active$Longitude)
+  )
+  nearest <- active[order(active$dist_km), , drop = FALSE][1, , drop = FALSE]
+  list(
+    site_code = site_code,
+    target = target,
+    nearest = nearest,
+    active_sites = active
+  )
+}
+
 bl_bind_site_readings <- function(parts) {
   parts <- Filter(function(x) !is.null(x) && nrow(x) > 0, parts)
   if (!length(parts)) {
