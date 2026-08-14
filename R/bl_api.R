@@ -101,7 +101,9 @@ bl_load_env <- function(path = ".env") {
   invisible(TRUE)
 }
 
-# --- Report site codes (comma-separated list or single BL_SITE_CODE) ---
+# --- Report site codes (JSON list, optional .env override, or single BL_SITE_CODE) ---
+BL_REPORT_SENSORS_DEFAULT <- "data/raw/reportSensors.json"
+
 bl_parse_site_code_list <- function(x) {
   parts <- trimws(unlist(strsplit(as.character(x), ",", fixed = TRUE)))
   parts <- parts[nzchar(parts)]
@@ -111,19 +113,51 @@ bl_parse_site_code_list <- function(x) {
   unique(parts)
 }
 
+bl_read_report_sensors_json <- function(path = BL_REPORT_SENSORS_DEFAULT) {
+  if (!file.exists(path)) {
+    return(NULL)
+  }
+  if (!requireNamespace("jsonlite", quietly = TRUE)) {
+    stop("Install jsonlite to read ", path, call. = FALSE)
+  }
+  raw <- jsonlite::fromJSON(path, simplifyVector = TRUE)
+  codes <- if (is.list(raw) && !is.null(raw$site_codes)) {
+    raw$site_codes
+  } else if (is.character(raw)) {
+    raw
+  } else {
+    stop("reportSensors.json must contain a site_codes array.", call. = FALSE)
+  }
+  codes <- unique(trimws(as.character(codes)))
+  codes <- codes[nzchar(codes)]
+  if (!length(codes)) {
+    stop("No site codes found in ", path, call. = FALSE)
+  }
+  codes
+}
+
 bl_resolve_report_site_codes <- function() {
   if (!length(ls(envir = .bl_env_expanded))) {
     bl_load_env()
   }
+  # Optional temporary override for a subset of sites.
   codes <- bl_env("BL_REPORT_SITE_CODES", "")
   if (nzchar(codes)) {
     return(bl_parse_site_code_list(codes))
+  }
+  json_path <- bl_env("BL_REPORT_SENSORS_JSON", BL_REPORT_SENSORS_DEFAULT)
+  json_codes <- bl_read_report_sensors_json(json_path)
+  if (!is.null(json_codes)) {
+    return(json_codes)
   }
   single <- bl_env("BL_SITE_CODE", "")
   if (nzchar(single)) {
     return(single)
   }
-  stop("Set BL_REPORT_SITE_CODES or BL_SITE_CODE in .env", call. = FALSE)
+  stop(
+    "Set site codes in data/raw/reportSensors.json, or BL_REPORT_SITE_CODES / BL_SITE_CODE in .env",
+    call. = FALSE
+  )
 }
 
 bl_use_site_code <- function(site_code) {
@@ -498,6 +532,32 @@ bl_earth_dist_km <- function(lat1, lon1, lat2, lon2) {
   lat2_r <- lat2 * rad
   h <- sin(dlat / 2)^2 + cos(lat1_r) * cos(lat2_r) * sin(dlon / 2)^2
   r * 2 * atan2(sqrt(h), sqrt(1 - h))
+}
+
+# Initial bearing (forward azimuth) from point 1 to point 2, in degrees clockwise
+# from true north.
+bl_earth_bearing_deg <- function(lat1, lon1, lat2, lon2) {
+  rad <- pi / 180
+  dlon <- (lon2 - lon1) * rad
+  lat1_r <- lat1 * rad
+  lat2_r <- lat2 * rad
+  y <- sin(dlon) * cos(lat2_r)
+  x <- cos(lat1_r) * sin(lat2_r) - sin(lat1_r) * cos(lat2_r) * cos(dlon)
+  (atan2(y, x) / rad + 360) %% 360
+}
+
+BL_COMPASS_8 <- c(
+  "north", "north east", "east", "south east",
+  "south", "south west", "west", "north west"
+)
+
+# Bearing snapped to the nearest of 8 compass points.
+bl_compass_direction_8 <- function(bearing_deg) {
+  if (!length(bearing_deg) || is.na(bearing_deg)) {
+    return(NA_character_)
+  }
+  idx <- (round(bearing_deg / 45) %% 8) + 1L
+  BL_COMPASS_8[[idx]]
 }
 
 # Closest still-active sensor to site_code (EndDate missing = active).

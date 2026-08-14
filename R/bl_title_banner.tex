@@ -1,0 +1,33 @@
+% Title-page banner: top fifth of page in blorg (#0000CD), lungs image + report title on the left.
+\newlength{\blbannerheight}
+\newlength{\blbannertextwidth}
+\newlength{\blbannerreserve}
+\newlength{\blbannerpadding}
+\setlength{\blbannerheight}{0.2\paperheight}
+\setlength{\blbannertextwidth}{0.56\paperwidth}
+\setlength{\blbannerpadding}{1.5\baselineskip}
+\AtBeginDocument{%
+  \setlength{\blbannerreserve}{\dimexpr\blbannerheight-1in\relax}%
+}
+\newcommand{\blpageonetitlelineone}{}
+\newcommand{\blpageonetitlelinetwo}{}
+\newcommand{\blpageonetitlelinethree}{}
+\newcommand{\blpageonebanner}{%
+  \begin{tikzpicture}[remember picture,overlay]%
+    \fill[blorg] (current page.north west) rectangle ([yshift=-\blbannerheight]current page.north east);%
+    \coordinate (blbannermid) at ([xshift=1.2cm,yshift=-0.5\blbannerheight]current page.north west);%
+    \node[anchor=west,inner sep=0pt] (blbannerlogo) at (blbannermid) {%
+      \includegraphics[height=0.72\blbannerheight,keepaspectratio]{figure/lungs_blue.png}%
+    };%
+    \node[anchor=west,inner sep=0pt] at ([xshift=1.1cm]blbannerlogo.east |- blbannermid) {%
+      \parbox[c]{\blbannertextwidth}{%
+        \raggedright\color{white}\bfseries
+        \begin{tabular}{@{}l@{}}
+          {\fontsize{22}{22}\selectfont\blpageonetitlelineone}\\[0.75em]
+          {\fontsize{28}{28}\selectfont\blpageonetitlelinetwo}\\[0.75em]
+          {\fontsize{18}{18}\selectfont\blpageonetitlelinethree}
+        \end{tabular}%
+      }%
+    };%
+  \end{tikzpicture}%
+}

@@ -18,6 +18,10 @@
 *.tex
 *.aux
 *.log
+*.html
+
+# Lungs report LaTeX assets (not knit leftovers)
+!R/*.tex
 
 # Generated analysis outputs (regenerate locally; do not commit)
 output/
@@ -30,9 +34,17 @@ figure/*
 
 # Regenerable API cache (run scripts/fetch_*.R)
 data/raw/*.json
+!data/raw/reportSensors.json
+data/raw/Untitled
 
 # OS
 .DS_Store
 
-# Local QA working files (do not commit)
+# Editor / agent
+.cursor/
+
+# Local analysis (do not commit)
 Quality assurance/
+R/bl_colocation.R
+scripts/colocation_*.R
+scripts/fetch_colocation_data.R

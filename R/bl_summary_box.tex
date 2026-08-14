@@ -1,0 +1,23 @@
+% Page-breakable coloured summary box.
+% \fcolorbox around a minipage is a single unbreakable box, so a summary that
+% does not fit is pushed whole onto the next page and leaves a gap behind it.
+% framed's \MakeFramed instead splits the content at the page boundary and
+% redraws \FrameCommand around each piece, so the overflow continues inside a
+% fresh box at the top of the next page.
+\newlength{\blsummaryrule}
+\newlength{\blsummarysep}
+\setlength{\blsummaryrule}{3pt}
+\setlength{\blsummarysep}{10pt}
+% #1 is the border colour name.
+\newenvironment{blsummarybox}[1]{%
+  \setlength{\FrameRule}{\blsummaryrule}%
+  \setlength{\FrameSep}{\blsummarysep}%
+  \def\FrameCommand{%
+    \setlength{\fboxrule}{\FrameRule}%
+    \setlength{\fboxsep}{\FrameSep}%
+    \fcolorbox{#1}{white}%
+  }%
+  \MakeFramed{\advance\hsize-\width\FrameRestore}%
+}{%
+  \endMakeFramed
+}

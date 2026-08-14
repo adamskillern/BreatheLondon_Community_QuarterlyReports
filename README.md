@@ -9,16 +9,19 @@ Copy [`.env.example`](.env.example) to `.env` and set:
 | Variable | Purpose |
 |----------|---------|
 | `year_of_report` | e.g. `2025` — used in `${year_of_report}` |
-| `BL_SITE_CODE` | Single sensor code (fallback when `BL_REPORT_SITE_CODES` is unset) |
-| `BL_REPORT_SITE_CODES` | Comma-separated sensor codes for batch report generation, e.g. `CLDP0299,CLDP0470,CLDP0391` |
+| `BL_SITE_CODE` | Single sensor fallback |
+| `BL_REPORT_SITE_CODES` | Optional temporary override (comma-separated). Leave blank to use `reportSensors.json` |
+| `BL_REPORT_SENSORS_JSON` | Path to report site list (default `data/raw/reportSensors.json`) |
 | `BL_DATA_SOURCE` | `csv` or `api` |
 | Report dates | **Automatic** — last completed calendar quarter (`Rscript scripts/show_api_times.R`) |
+
+**Report sites:** edit [`data/raw/reportSensors.json`](data/raw/reportSensors.json) — the canonical list for quarterly reports and report-related data. `BL_REPORT_SITE_CODES` overrides it only when set.
 
 Weekday (`Wed`, `Fri`, …) is added in R when calling the API. Preview: `Rscript scripts/show_api_times.R`
 
 ## Analyse data (R console)
 
-Load community node data and Marylebone Road (MY1) reference for interactive analysis with `scripts/analysis_BL.R`. Sites come from `BL_REPORT_SITE_CODES` (or `BL_SITE_CODE` if unset). Node data respects `BL_DATA_SOURCE` (`api` or `csv`).
+Load community node data and Marylebone Road (MY1) reference for interactive analysis with `scripts/analysis_BL.R`. Sites come from `reportSensors.json` (or `BL_REPORT_SITE_CODES` / `BL_SITE_CODE` if set). Node data respects `BL_DATA_SOURCE` (`api` or `csv`).
 
 **QA default:** raw API values — no rounding, zeros kept as `0` (not `NA`). Quarterly reports still use cleaned data. Pass `bl_load_analysis_data(raw = FALSE)` for report-style cleaning. CSV files written by `fetch_readings.R` are already cleaned; use `BL_DATA_SOURCE=api` for true raw values.
 
@@ -32,7 +35,7 @@ That gives you:
 
 | Object | What it is |
 |--------|------------|
-| `site_codes` | All sites from `BL_REPORT_SITE_CODES`, e.g. `CLDP0299`, `CLDP0470`, `CLDP0391` |
+| `site_codes` | All sites from `reportSensors.json` (or `.env` override) |
 | `site_code` | First site in that list, e.g. `CLDP0299` |
 | `no2_df` / `pm25_df` | Hourly data for `site_code` (`date` + pollutant column) |
 | `nodes` | Named list of all sites, e.g. `nodes[["CLDP0470"]]$no2` |
@@ -145,6 +148,12 @@ Rscript scripts/render_lungs_report.R
 
 The `.Rmd` files call the API during knit (slower; needs network and key).
 
+### Summary boxes split across pages
+
+The bordered summary boxes are emitted by `bl_emit_summary_box()` into the `blsummarybox` LaTeX environment defined in `R/bl_summary_box.tex`. It wraps the `framed` package's `\MakeFramed`, so a box that does not fit fills the remaining space on the current page and the leftover bullets continue inside a fresh, fully closed box at the top of the next page. This avoids the whole box being pushed onto the next page and leaving a large gap behind it.
+
+Border colour is passed as the environment argument (`\begin{blsummarybox}{blno2quarterborder}`). Rule thickness and padding come from `\blsummaryrule` (3pt) and `\blsummarysep` (10pt).
+
 ### Summary-of-data-to-date logic
 
 The **Summary of data to date** boxes only use measurements through the **end of the report quarter** (not the latest fetched row). This keeps the quarterly report internally consistent.
@@ -174,6 +183,29 @@ All numeric values shown in the quarterly report PDF use **whole numbers** (no d
 | **Annual exceedance %** | Percentage of days exceeding the WHO daily mean guideline per calendar year |
 
 Rounding is controlled by `BL_REPORT_ROUND_DIGITS` (default `0`) in `QuarterlyAQtrends_git.Rmd`. Load-time cleaning is in `bl_clean_pollutant_values()` in `R/bl_api.R`.
+
+**Exception — distances.** Concentrations use whole numbers, but the nearest-sensor distance is classified by magnitude:
+
+| Distance | Unit | Rounding | Example |
+|----------|------|----------|---------|
+| **1 km or more** | kilometres | one decimal place | `1.24 km` → `1.2 km` |
+| **Under 1 km** | metres | whole number | `0.8452 km` → `845 m` |
+
+Implemented in `bl_format_distance()` in `QuarterlyAQtrends_lungs.Rmd`.
+
+### Nearest sensor bullet
+
+Each pollutant **Summary of Q1** (etc.) bordered box ends with a bullet naming the closest still-active Breathe London sensor. The “Summary of data to date” boxes do not include this text.
+
+> Your nearest sensor is the Pembury Circus sensor that is 1.2 km away towards the south east. Please note that nearest sensors will have their own pollution sources and weather conditions that will affect their measurements.
+
+| Part | Source |
+|------|--------|
+| **Sensor name** | `SiteName` of the nearest active site from `bl_nearest_active_site()` |
+| **Distance** | Great-circle distance via `bl_earth_dist_km()`, formatted by the rule above |
+| **Direction** | Initial bearing via `bl_earth_bearing_deg()`, snapped to **8 compass points** by `bl_compass_direction_8()` |
+
+Direction wording is limited to eight values — `north`, `north east`, `east`, `south east`, `south`, `south west`, `west`, `north west` — so a bearing of 148.7° reads as “south east”. Bearings are measured from the community node to the nearest sensor.
 
 ### Marylebone Road comparison paragraphs
 
