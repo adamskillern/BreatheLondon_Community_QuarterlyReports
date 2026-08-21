@@ -37,6 +37,10 @@ data/raw/*.json
 !data/raw/reportSensors.json
 data/raw/Untitled
 
+# Local polar analysis (not part of quarterly reports; keep private)
+scripts/polar_map_nwr.R
+scripts/polar_plots.R
+
 # OS
 .DS_Store
 
