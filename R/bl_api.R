@@ -217,6 +217,12 @@ bl_api_get <- function(path, query = list()) {
   url <- paste0(bl_api_base(), path)
   resp <- httr2::request(url) |>
     httr2::req_url_query(key = bl_api_key(), !!!query) |>
+    httr2::req_retry(
+      max_tries = 5,
+      is_transient = function(resp) {
+        httr2::resp_status(resp) %in% c(429L, 500L, 502L, 503L, 504L)
+      }
+    ) |>
     httr2::req_perform()
 
   # Treat HTTP 4xx/5xx as failure and include the URL in the error message.

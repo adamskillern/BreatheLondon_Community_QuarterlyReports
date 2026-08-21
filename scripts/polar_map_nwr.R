@@ -1,17 +1,18 @@
 #!/usr/bin/env Rscript
-# PM2.5 NWR polar plots on a Leaflet map (openairmaps::polarMap) for BLC CLDP sites.
+# PM2.5 polar plots on a Leaflet map for BLC CLDP sites.
 #
 # Uses the same data window and wind module as scripts/polar_plots.R.
 # Builds one custom polar marker PNG per site (large N/E/S/W + wind-speed
-# scale with an inline "ws" label), all sharing one colour scale, then places
-# them on a CartoDB Voyager basemap with large SiteName labels.
+# scale with an inline "ws" label), all sharing one colour scale per method,
+# then places them on a CartoDB Voyager basemap with large SiteName labels.
 #
 # Run from project root:
 #   Rscript scripts/polar_map_nwr.R
 #
 # Outputs:
-#   output/polar_plots/pm25_nwr_polar_map.html
-#   output/polar_plots/marker_<SiteCode>.png
+#   output/polar_plots/pm25_mean_polar_map.html   (statistic="mean", GAM smooth)
+#   output/polar_plots/pm25_nwr_polar_map.html    (statistic="nwr")
+#   output/polar_plots/marker_<SiteCode>_{mean_smoothed,nwr}.png
 
 suppressPackageStartupMessages({
   library(dplyr)
@@ -51,7 +52,8 @@ BL_POLAR_WDIR_CSV <- "data/raw/WDIR to 18062026.csv"
 BL_POLAR_WSPD_CSV <- "data/raw/WSPD to 18062026.csv"
 BL_POLAR_RDATA <- "data/processed/pm25_wd_analysis_14Jun2026.RData"
 BL_POLAR_PLOT_DIR <- "output/polar_plots"
-BL_POLAR_MAP_HTML <- file.path(BL_POLAR_PLOT_DIR, "pm25_nwr_polar_map.html")
+BL_POLAR_MAP_MEAN_HTML <- file.path(BL_POLAR_PLOT_DIR, "pm25_mean_polar_map.html")
+BL_POLAR_MAP_NWR_HTML <- file.path(BL_POLAR_PLOT_DIR, "pm25_nwr_polar_map.html")
 
 bl_ensure_pkg <- function(pkg, repos = NULL) {
   if (requireNamespace(pkg, quietly = TRUE)) {
@@ -109,34 +111,45 @@ bl_site_coords <- function(site_codes, sensors_path = "data/raw/listSensors.json
 
 # Build one transparent PNG polar marker per site, all sharing `limits`.
 # Returns a named vector of PNG paths keyed by SiteCode plus the shared limits.
-bl_build_marker_pngs <- function(site_dfs, outdir, fontsize = BL_MARKER_FONTSIZE) {
+bl_build_marker_pngs <- function(
+    site_dfs,
+    outdir,
+    statistic = c("mean", "nwr"),
+    file_tag = NULL,
+    fontsize = BL_MARKER_FONTSIZE) {
+  statistic <- match.arg(statistic)
+  if (is.null(file_tag)) {
+    file_tag <- if (identical(statistic, "mean")) "mean_smoothed" else "nwr"
+  }
   dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
 
-  # Pass 1: shared colour limits across all sites (from the NWR surfaces).
-  message("Computing NWR surfaces for ", length(site_dfs), " site(s) ...")
+  message(
+    "Computing ", statistic, " surfaces for ", length(site_dfs), " site(s) ..."
+  )
   z_range <- range(
     unlist(lapply(site_dfs, function(df) {
-      o <- openair::polarPlot(df, pollutant = "pm25", statistic = "nwr", plot = FALSE)
+      o <- openair::polarPlot(
+        df, pollutant = "pm25", statistic = statistic, plot = FALSE
+      )
       range(o$data$z, na.rm = TRUE)
     })),
     na.rm = TRUE
   )
   limits <- c(floor(z_range[1] * 2) / 2, ceiling(z_range[2] * 2) / 2)
 
-  # Pass 2: render each marker with the shared colour scale applied directly.
   side_in <- BL_MARKER_RENDER_IN
   paths <- character(0)
   for (sc in names(site_dfs)) {
     obj <- openair::polarPlot(
       site_dfs[[sc]],
       pollutant = "pm25",
-      statistic = "nwr",
+      statistic = statistic,
       limits = limits,
       cols = "turbo",
       key.position = "none",
       fontsize = fontsize,
-      annotate = TRUE,   # keeps the large N/E/S/W compass letters
-      caption = "",       # drop the default "Radial axis shows ..." footer
+      annotate = TRUE,
+      caption = "",
       plot = FALSE
     )
     p <- obj$plot +
@@ -151,7 +164,7 @@ bl_build_marker_pngs <- function(site_dfs, outdir, fontsize = BL_MARKER_FONTSIZE
         plot.margin = grid::unit(rep(3, 4), "pt"),
         legend.position = "none"
       )
-    f <- file.path(outdir, paste0("marker_", sc, ".png"))
+    f <- file.path(outdir, paste0("marker_", sc, "_", file_tag, ".png"))
     suppressMessages(suppressWarnings(
       ggplot2::ggsave(
         f, plot = p,
@@ -162,7 +175,7 @@ bl_build_marker_pngs <- function(site_dfs, outdir, fontsize = BL_MARKER_FONTSIZE
     paths[sc] <- normalizePath(f)
   }
 
-  list(paths = paths, limits = limits)
+  list(paths = paths, limits = limits, statistic = statistic, file_tag = file_tag)
 }
 
 bl_add_site_labels <- function(p_map, coords, d_icon) {
@@ -188,7 +201,6 @@ bl_add_site_labels <- function(p_map, coords, d_icon) {
     labelOptions = leaflet::labelOptions(
       noHide = TRUE,
       direction = "top",
-      # Sit just above the polar marker (smaller offset = closer).
       offset = c(0, -(d_icon / 2 - 28)),
       textOnly = TRUE,
       style = label_style
@@ -196,14 +208,36 @@ bl_add_site_labels <- function(p_map, coords, d_icon) {
   )
 }
 
-bl_save_polar_map <- function(site_dfs, coords, out_html) {
+bl_save_polar_map <- function(
+    site_dfs,
+    coords,
+    out_html,
+    statistic = c("mean", "nwr"),
+    legend_title = NULL,
+    marker_outdir = NULL) {
+  statistic <- match.arg(statistic)
   bl_ensure_map_deps()
 
+  if (is.null(marker_outdir)) {
+    marker_outdir <- dirname(out_html)
+  }
+  if (is.null(legend_title)) {
+    legend_title <- if (identical(statistic, "mean")) {
+      "Mean PM<sub>2.5</sub>"
+    } else {
+      "NWR PM<sub>2.5</sub>"
+    }
+  }
+
   d_icon <- BL_MARKER_ICON_PX
-  markers <- bl_build_marker_pngs(site_dfs, dirname(out_html))
+  markers <- bl_build_marker_pngs(
+    site_dfs,
+    marker_outdir,
+    statistic = statistic
+  )
   message(
-    "Shared NWR colour scale: ", markers$limits[1], " – ", markers$limits[2],
-    " (mean PM2.5)"
+    "Shared ", markers$statistic, " colour scale: ",
+    markers$limits[1], " – ", markers$limits[2]
   )
 
   turbo <- openair::openColours("turbo", 100)
@@ -241,7 +275,7 @@ bl_save_polar_map <- function(site_dfs, coords, out_html) {
     position = "topright",
     pal = pal,
     values = markers$limits,
-    title = "Mean PM<sub>2.5</sub>",
+    title = legend_title,
     opacity = 1
   )
   # Flip the continuous bar so high values sit at the top, without
@@ -275,10 +309,13 @@ function(el, x) {
   )
 
   dir.create(dirname(out_html), recursive = TRUE, showWarnings = FALSE)
-  htmlwidgets::saveWidget(p_map, file = out_html, selfcontained = TRUE)
-  message("Saved map: ", out_html)
+  # Absolute path required: saveWidget resolves relative paths against the
+  # widget working directory, not the caller's getwd().
+  out_html_abs <- normalizePath(out_html, mustWork = FALSE)
+  htmlwidgets::saveWidget(p_map, file = out_html_abs, selfcontained = TRUE)
+  message("Saved map: ", out_html_abs)
 
-  invisible(list(html = out_html, limits = markers$limits))
+  invisible(list(html = out_html_abs, limits = markers$limits, statistic = statistic))
 }
 
 setwd(bl_find_project_root())
@@ -321,4 +358,11 @@ message(
   " (", sum(vapply(site_dfs, nrow, integer(1))), " paired hourly rows total)"
 )
 
-bl_save_polar_map(site_dfs, coords, BL_POLAR_MAP_HTML)
+bl_save_polar_map(
+  site_dfs, coords, BL_POLAR_MAP_MEAN_HTML,
+  statistic = "mean"
+)
+bl_save_polar_map(
+  site_dfs, coords, BL_POLAR_MAP_NWR_HTML,
+  statistic = "nwr"
+)

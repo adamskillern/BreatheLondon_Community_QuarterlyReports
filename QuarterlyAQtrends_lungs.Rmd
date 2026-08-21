@@ -280,8 +280,8 @@ bl_format_nearest_sensor_note <- function(nearest_result) {
   }
   sprintf(
     paste0(
-      "Your \\textcolor{blnearest}{nearest sensor} is the %s sensor that is %s away towards the %s. ",
-      "Please note that \\textcolor{blnearest}{nearest sensors} will have their own pollution sources ",
+      "The \\textcolor{blnearest}{next nearest node} to your community node is the %s node that is %s away towards the %s. ",
+      "Please note that \\textcolor{blnearest}{nearest nodes} will have their own pollution sources ",
       "and weather conditions that will affect their measurements."
     ),
     site_name, distance, direction
@@ -490,7 +490,7 @@ bl_format_marylebone_paragraph <- function(
     A = sprintf(
       paste0(
         "Residents may think that living outside Central London means cleaner air. ",
-        "However, during the morning rush hour, the community sensor recorded %s µg/m³ %s, ",
+        "However, during the morning rush hour, the community node recorded %s µg/m³ %s, ",
         "compared with %s µg/m³ at Marylebone Road."
       ),
       x, pol, y
@@ -498,7 +498,7 @@ bl_format_marylebone_paragraph <- function(
     B = sprintf(
       paste0(
         "Short-term %s spikes can have important health impacts. ",
-        "On %d afternoons, the community sensor recorded a mean of %s µg/m³, ",
+        "On %d afternoons, the community node recorded a mean of %s µg/m³, ",
         "compared with %s µg/m³ at Marylebone Road."
       ),
       pol, selection$n_spike_days, x, y
@@ -506,14 +506,14 @@ bl_format_marylebone_paragraph <- function(
     SPIKE = sprintf(
       paste0(
         "Short-term %s spikes can have important health impacts. ",
-        "On %d %s, the community sensor recorded a mean of %s µg/m³, ",
+        "On %d %s, the community node recorded a mean of %s µg/m³, ",
         "compared with %s µg/m³ at Marylebone Road."
       ),
       pol, selection$n_spike_days, selection$period_label, x, y
     ),
     C = sprintf(
       paste0(
-        "During school pick-up periods, the mean %s concentration at the community sensor was %s, ",
+        "During school pick-up periods, the mean %s concentration at the community node was %s, ",
         "whereas the mean concentration at Marylebone Road was %s. ",
         "For families, this means that children's exposure to air pollution can be comparable ",
         "to that experienced in one of London's busiest government and traffic districts."
@@ -543,11 +543,18 @@ bl_collect_marylebone_footnotes <- function(entries) {
     entry <- active[[i]]
     list(
       mark = bl_marylebone_footnote_mark(i),
-      text = bl_format_marylebone_footnote(
-        entry$selection,
-        bl_pollutant_latex(entry$pollutant_md),
-        quarter_label
-      )
+      text = {
+        footnote_text <- bl_format_marylebone_footnote(
+          entry$selection,
+          bl_pollutant_latex(entry$pollutant_md),
+          quarter_label
+        )
+        if (is.null(footnote_text)) {
+          NULL
+        } else {
+          gsub("sensor", "node", footnote_text, fixed = TRUE)
+        }
+      }
     )
   })
   marks <- stats::setNames(
@@ -895,7 +902,7 @@ bl_spike_cooccurrence_methodology_text <- function(quantile = BL_SPIKE_COOCCURRE
     sprintf(
       paste0(
         "Air pollutant spikes are the highest %s of hourly concentrations for each pollutant ",
-        "at this sensor within the report quarter, using paired measurements at the same timestamp. ",
+        "at this node within the report quarter, using paired measurements at the same timestamp. ",
         "The percentage reported is simultaneous spike hours as a share of all hours where either ",
         "NO\\textsubscript{2} or PM\\textsubscript{2.5} spiked."
       ),
@@ -1275,7 +1282,7 @@ nearest_result <- bl_nearest_active_site(site_code = site_code)
 nearest_site <- nearest_result$nearest
 nearest_code <- as.character(nearest_site$SiteCode[1])
 nearest_sensor_note <- bl_format_nearest_sensor_note(nearest_result)
-nearest_label <- "Nearest sensor"
+nearest_label <- "Nearest node"
 london_label <- "London mean"
 line_levels <- c(all_data_label, nearest_label, london_label)
 # Same thickness for all overlay lines
@@ -1379,7 +1386,7 @@ hourly_callout_ref_y_max <- max(
 ```
 
 ```{r no2-page-heading, echo=FALSE, results='asis', eval=!preview_hourly}
-cat("\\newpage\n\n# NO~2~\n\n## Average NO~2~ for each hour at your Breathe London node\n")
+cat("\\newpage\n\n# NO~2~\n\n## Average NO~2~ for each hour at your Breathe London Community node\n")
 ```
 
 ```{r preview-no2-heading, echo=FALSE, results='asis', eval=preview_no2}
@@ -1388,7 +1395,7 @@ if (preview_no2) {
 } else {
   cat("\\newpage\n")
 }
-cat("# NO~2~\n\n## Average NO~2~ for each hour at your Breathe London node\n")
+cat("# NO~2~\n\n## Average NO~2~ for each hour at your Breathe London Community node\n")
 ```
 
 ```{r no2-hourly-plot, eval=!preview_pm25, out.width='\\textwidth', fig.width = 12.5, fig.height = 4.4, fig.align='center', fig.show='hold', fig.pos='H'}
@@ -1540,11 +1547,11 @@ if (preview_pm25) {
 } else {
   cat("\\newpage\n")
 }
-cat("# PM~2.5~\n\n## Average PM~2.5~ for each hour at your Breathe London node\n")
+cat("# PM~2.5~\n\n## Average PM~2.5~ for each hour at your Breathe London Community node\n")
 ```
 
 ```{r pm25-page-heading, echo=FALSE, results='asis', eval=!preview_pm25 && !preview_no2}
-cat("# PM~2.5~\n\n## Average PM~2.5~ for each hour at your Breathe London node\n")
+cat("# PM~2.5~\n\n## Average PM~2.5~ for each hour at your Breathe London Community node\n")
 ```
 
 ```{r pm25-hourly-plot, eval=!preview_no2, out.width='\\textwidth', fig.width = 12.5, fig.height = 4.4, fig.align='center', fig.show='hold', fig.pos='H'}
@@ -1749,7 +1756,7 @@ if (!is.null(spike_cooccurrence_footnote_mark)) {
 }
 cat(
   "To download the data that was used to generate this report, visit ",
-  "\\url{https://www.breathelondon.org/} and search for your node in the ",
+  "\\url{https://www.breathelondon-communities.org/} and search for your community node in the ",
   "Node Search hyperlink just below the node map.\n",
   sep = ""
 )
